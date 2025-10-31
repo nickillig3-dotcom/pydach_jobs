@@ -1,0 +1,12 @@
+﻿# Python / venv
+.venv/
+__pycache__/
+*.pyc
+
+# Projekt
+pydach_jobs.sqlite3
+app/config_local.py
+
+# OS
+.DS_Store
+Thumbs.db
