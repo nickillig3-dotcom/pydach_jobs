@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Sponsoring — Checkout</h2>
+<p>Bitte überweise <strong>{{ "%.2f"|format(amount) }} EUR</strong> an:</p>
+<div class="payment-box">
+  <div class="qr">
+    <img src="{{ url_for('checkout_qr', order_id=order.id) }}" alt="EPC QR (SEPA)">
+  </div>
+  <div class="details">
+    <p><strong>Empfänger:</strong> {{ owner_name }}</p>
+    <p><strong>IBAN:</strong> <code>{{ iban }}</code></p>
+    {% if bic %}<p><strong>BIC:</strong> <code>{{ bic }}</code></p>{% endif %}
+    <p><strong>Betrag:</strong> {{ "%.2f"|format(amount) }} EUR</p>
+    <p><strong>Verwendungszweck:</strong> <code>{{ order.reference }}</code></p>
+    <p>Dein Banner läuft <strong>7 Tage</strong> auf Start‑ und Landingpages. Aktivierung nach Zahlungseingang.</p>
+  </div>
+</div>
+{% endblock %}
