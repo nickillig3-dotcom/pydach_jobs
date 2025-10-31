@@ -36,3 +36,17 @@ ul.jobs{list-style:none;padding:0;margin:0}
 .sponsor.cta{background:#eef7ff;border-color:#cfe6ff}
 .sponsor.cta a{color:#0b3d91}
 .hp{display:none !important}  /* Honeypot unsichtbar für Menschen */
+.sponsor-bar {
+  display:block; margin:18px auto 0; max-width:980px;
+  background:#ecf5ff; border:1px solid #d7e9ff; border-radius:8px;
+  padding:10px 14px; text-decoration:none; color:#1d3b5a;
+}
+.sponsor-bar img {
+  max-height:28px; vertical-align:middle; margin-right:10px;
+}
+.sponsor-bar span { vertical-align:middle; font-weight:500; }
+.kpis { display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin:12px 0 10px; }
+.kpi { background:#f7f8fb; border:1px solid #e6e8ee; border-radius:8px; padding:10px 12px; }
+.kpi-label { color:#667; font-size:12px; }
+.kpi-value { font-size:20px; font-weight:600; margin-top:4px; }
+@media (max-width: 720px) { .kpis { grid-template-columns: repeat(2,1fr); } }

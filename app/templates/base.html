@@ -33,18 +33,19 @@
     {% endif %}
   {% endwith %}
 
-  {% if current_sponsor %}
-    <div class="sponsor">
-      <a href="{{ current_sponsor.website or '#' }}" rel="nofollow sponsored">
-        <strong>Sponsor:</strong> {{ current_sponsor.banner_text|e }} — {{ current_sponsor.company|e }}
-      </a>
-    </div>
+  {% if active_sponsor %}
+    <a class="sponsor-bar" href="{{ active_sponsor.website or '#' }}" target="_blank" rel="noopener">
+      {% if active_sponsor.image_url %}
+        <img src="{{ active_sponsor.image_url }}" alt="{{ active_sponsor.company }}">
+      {% endif %}
+      <span>{{ active_sponsor.banner_text }}</span>
+    </a>
   {% else %}
-    <div class="sponsor cta">
-      <a href="{{ url_for('sponsor_new') }}"><strong>Dein Logo hier?</strong> 7‑Tage Top‑Banner jetzt buchen (SEPA‑Überweisung).</a>
+    <div class="notice">
+      Dein Logo hier? 7-Tage Top-Banner jetzt buchen (SEPA-Überweisung).
     </div>
   {% endif %}
-
+  
   {% block content %}{% endblock %}
 </main>
 <footer>

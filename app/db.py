@@ -84,3 +84,8 @@ def init_db():
         cols = [r["name"] for r in cur.fetchall()]
         if "ab_group" not in cols:
             cur.execute("ALTER TABLE orders ADD COLUMN ab_group TEXT")
+        # --- Migration: image_url für Sponsoren nachrüsten
+        cur.execute("PRAGMA table_info(sponsors)")
+        s_cols = [r["name"] for r in cur.fetchall()]
+        if "image_url" not in s_cols:
+            cur.execute("ALTER TABLE sponsors ADD COLUMN image_url TEXT")

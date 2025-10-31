@@ -5,6 +5,24 @@
   <label>CSV‑Export deiner Bank (mit Verwendungszweck)<input type="file" name="file" accept=".csv"></label>
   <button class="btn" type="submit">CSV importieren</button>
 </form>
+<div class="kpis">
+  <div class="kpi">
+    <div class="kpi-label">Umsatz gesamt</div>
+    <div class="kpi-value">{{ "%.2f"|format(kpis.revenue_total) }} €</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Umsatz 7 Tage</div>
+    <div class="kpi-value">{{ "%.2f"|format(kpis.revenue_7d) }} €</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Bestellungen gesamt</div>
+    <div class="kpi-value">{{ kpis.orders_total }}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Conversion gesamt</div>
+    <div class="kpi-value">{{ "%.1f"|format(kpis.conv_total) }}%</div>
+  </div>
+</div>
 <h3>A/B‑Report</h3>
 <table class="table">
   <thead>

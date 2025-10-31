@@ -1,11 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Sponsor werden (7 Tage Top‑Banner)</h2>
-<p>Du erhältst ein sichtbares Banner auf Start‑ und Landingpages. Zahlung per <strong>SEPA‑Überweisung</strong> (EPC‑QR).</p>
+<h2>Sponsor werden (7 Tage Top-Banner)</h2>
+<p>Du erhältst ein sichtbares Banner auf Start- und Landingpages. Zahlung per <strong>SEPA-Überweisung</strong> (EPC-QR).</p>
 <form method="post" class="form" autocomplete="off">
   <label>Firma*<input name="company" required></label>
   <label>Website (inkl. https://)<input name="website" placeholder="https://example.com"></label>
-  <label>Banner‑Text*<input name="banner_text" required placeholder="Kurze Botschaft, z. B. 'Wir stellen Python‑Devs ein'"></label>
+
+  <label>Bild-URL (Logo/Banner) – optional
+    <input type="url" name="image_url" placeholder="https://…/banner.png">
+  </label>
+
+  <label>Banner-Text*<input name="banner_text" required placeholder="Kurze Botschaft, z. B. 'Wir stellen Python-Devs ein'"></label>
 
   <div class="hp">
     <label>Ihre Website (lassen Sie dieses Feld leer)<input name="homepage" autocomplete="off"></label>

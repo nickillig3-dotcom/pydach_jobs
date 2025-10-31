@@ -18,6 +18,23 @@ from reportlab.lib.pagesizes import A4
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
 
+@app.context_processor
+def inject_active_sponsor():
+    # Aktiven Sponsor für jede Seite bereitstellen
+    now = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT * FROM sponsors
+            WHERE status='active'
+              AND (starts_at IS NULL OR starts_at <= ?)
+              AND (ends_at   IS NULL OR ends_at   >= ?)
+            ORDER BY starts_at DESC
+            LIMIT 1
+        """, (now, now))
+        s = cur.fetchone()
+    return dict(active_sponsor=s)
+
 init_db()
 
 def now():
@@ -126,13 +143,41 @@ def collect_jobs():
         cur = conn.cursor()
         cur.execute("SELECT * FROM jobs WHERE status='published' ORDER BY created_at DESC")
         return cur.fetchall()
-    
+
+CITY_STOP = {"de","ch","at","dach","remote","homeoffice","hybrid","gmbh","ag"}
+
+def valid_city_token(raw: str) -> bool:
+    if not raw: return False
+    s = raw.strip()
+    if len(s) < 3: return False
+    t = s.lower()
+    if any(ch.isdigit() for ch in t): return False
+    # nur Buchstaben/Leer/Bindestrich (inkl. Umlaute/ß)
+    if not re.fullmatch(r"[a-zäöüß \-]+", t): return False
+    # mindestens ein Vokal
+    if not re.search(r"[aeiouäöü]", t): return False
+    # Offensichtlicher Unsinn/obzönes
+    if t in {"penis","fuck","shit"}: return False
+    # 4+ gleiche Zeichen am Stück -> Raus (z.B. "aaaa")
+    if re.search(r"(.)\1{3,}", t): return False
+    # Stopwörter
+    if t in CITY_STOP: return False
+    return True
+
 def location_variants(loc: str):
     if not loc:
         return []
     parts = re.split(r"[,\-/|–—]+", loc)
-    slugs = [slugify(p.strip()) for p in parts if p.strip()]
-    return [s for s in slugs if len(s) >= 3 and s not in {"de","ch","at"}]
+    slugs = []
+    for p in parts:
+        if valid_city_token(p):
+            slugs.append(slugify(p.strip()))
+    # eindeutige Reihenfolge beibehalten
+    out = []
+    for s in slugs:
+        if s not in out:
+            out.append(s)
+    return out
 
 def job_skills(text: str):
     text = (text or "").lower()
@@ -299,44 +344,61 @@ def checkout_qr(order_id: int):
     return send_file(BytesIO(png), mimetype="image/png", download_name=f"sepa_{order_id}.png")
 
 # --- Admin ---
-
 @app.get("/admin")
 def admin():
     token = request.args.get("token","")
     if token != ADMIN_TOKEN:
         abort(403)
+
     with db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 200")
         orders = cur.fetchall()
+
         jobs = {}
-        if orders:
-            ids = [o["job_id"] for o in orders if o["job_id"] != 0]
-            if ids:
-                cur.execute(f"SELECT * FROM jobs WHERE id IN ({','.join(['?']*len(ids))})", tuple(set(ids)))
-                jobs = {j["id"]: j for j in cur.fetchall()}
+        ids = [o["job_id"] for o in orders if o["job_id"] != 0]
+        if ids:
+            cur.execute(f"SELECT * FROM jobs WHERE id IN ({','.join(['?']*len(ids))})", tuple(set(ids)))
+            jobs = {j["id"]: j for j in cur.fetchall()}
+
         # A/B-Report
         cur.execute("""
             SELECT COALESCE(ab_group,'—') AS ab,
                    COUNT(*) AS orders,
                    SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) AS paid,
                    SUM(CASE WHEN status='paid' THEN price_cents ELSE 0 END) AS revenue_cents
-            FROM orders
-            GROUP BY COALESCE(ab_group,'—')
-            ORDER BY ab
+            FROM orders GROUP BY COALESCE(ab_group,'—') ORDER BY ab
         """)
         ab_report = []
         for r in cur.fetchall():
-            orders_cnt = r["orders"] or 0
-            paid_cnt = r["paid"] or 0
-            conv = (paid_cnt / orders_cnt * 100.0) if orders_cnt else 0.0
+            o = r["orders"] or 0
+            p = r["paid"] or 0
             ab_report.append(dict(
-                ab=r["ab"],
-                orders=orders_cnt,
-                paid=paid_cnt,
-                conv=round(conv, 1),
+                ab=r["ab"], orders=o, paid=p,
+                conv=round((p/o*100.0) if o else 0.0, 1),
                 revenue_eur=(r["revenue_cents"] or 0)/100.0
             ))
+
+        # KPIs gesamt & 7 Tage
+        week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat(sep=" ", timespec="seconds")
+        cur.execute("SELECT COUNT(*) AS c FROM orders")
+        total_orders = cur.fetchone()["c"]
+        cur.execute("SELECT COUNT(*) AS c FROM orders WHERE status='paid'")
+        paid_orders = cur.fetchone()["c"]
+        cur.execute("SELECT SUM(price_cents) AS s FROM orders WHERE status='paid'")
+        revenue_total = (cur.fetchone()["s"] or 0)/100.0
+        cur.execute("SELECT COUNT(*) AS c FROM orders WHERE created_at >= ?", (week_ago,))
+        orders_7d = cur.fetchone()["c"]
+        cur.execute("SELECT SUM(price_cents) AS s FROM orders WHERE status='paid' AND paid_at >= ?", (week_ago,))
+        revenue_7d = (cur.fetchone()["s"] or 0)/100.0
+        kpis = dict(
+            revenue_total=revenue_total,
+            revenue_7d=revenue_7d,
+            orders_total=total_orders,
+            orders_7d=orders_7d,
+            conv_total=round((paid_orders/total_orders*100.0) if total_orders else 0.0, 1),
+        )
+
     for o in orders:
         o["job"] = jobs.get(o["job_id"])
         o["amount"] = o["price_cents"]/100.0
@@ -347,7 +409,7 @@ def admin():
         sponsors = cur2.fetchall()
 
     return render_template("admin.html", orders=orders, sponsors=sponsors,
-                           ab_report=ab_report, token=token,
+                           ab_report=ab_report, kpis=kpis, token=token,
                            meta_title=f"Admin — {SITE_NAME}")
 
 @app.post("/admin/order/<int:order_id>/mark_paid")
@@ -445,6 +507,7 @@ def sponsor_new():
         company = request.form.get("company","").strip()
         website = request.form.get("website","").strip()
         banner_text = request.form.get("banner_text","").strip()
+        image_url = request.form.get("image_url","").strip()  # NEU
         if not company or not banner_text:
             flash("Firma und Banner‑Text sind Pflicht.", "error")
             a,b = random.randint(1,9), random.randint(1,9)
@@ -454,12 +517,11 @@ def sponsor_new():
             website = "https://" + website
         with db() as conn:
             cur = conn.cursor()
-            cur.execute("""INSERT INTO sponsors (company, website, banner_text, starts_at, ends_at, status)
-                           VALUES (?,?,?,?,?,?)""",
-                        (company, website, banner_text,
-                         (now()).isoformat(sep=" ", timespec="seconds"),
-                         (now() + timedelta(days=7)).isoformat(sep=" ", timespec="seconds"),
-                         "pending"))
+            cur.execute(
+                """INSERT INTO sponsors (company, website, banner_text, image_url, status)
+                   VALUES (?,?,?,?, 'pending')""",
+                (company, website, banner_text, image_url)
+            )
             sponsor_id = cur.lastrowid
             price_cents = int(round(current_price_eur() * 100))  # hier gleicher AB-Preis; kann separat gemacht werden
             ab = current_ab_group()[0]
