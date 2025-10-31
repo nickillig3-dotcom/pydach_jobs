@@ -1,7 +1,6 @@
 import sqlite3
 from contextlib import contextmanager
 from typing import Iterable
-
 from .config import DB_PATH
 
 def dict_factory(cursor, row):
@@ -11,7 +10,6 @@ def dict_factory(cursor, row):
     return d
 
 def get_connection():
-    # Keine automatische Timestamp-Konvertierung; wir arbeiten mit Strings
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = dict_factory
     return conn
@@ -59,6 +57,9 @@ def init_db():
             FOREIGN KEY(job_id) REFERENCES jobs(id)
         )
         """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_reference ON orders(reference)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_featured ON jobs(is_featured)")
+        # Sponsoring
         cur.execute("""
         CREATE TABLE IF NOT EXISTS sponsors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,5 +75,3 @@ def init_db():
         )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_sponsors_active ON sponsors(status, starts_at, ends_at)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_reference ON orders(reference)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_featured ON jobs(is_featured)")

@@ -12,7 +12,11 @@
     {% if bic %}<p><strong>BIC:</strong> <code>{{ bic }}</code></p>{% endif %}
     <p><strong>Betrag:</strong> {{ "%.2f"|format(amount) }} EUR</p>
     <p><strong>Verwendungszweck:</strong> <code>{{ order.reference }}</code></p>
-    <p>Dein Banner läuft <strong>7 Tage</strong> auf Start‑ und Landingpages. Aktivierung nach Zahlungseingang.</p>
+    <ul>
+      <li><strong>7 Tage</strong> Top‑Banner auf Start‑ & Landingpages</li>
+      <li>Einfaches **SEPA** — kein Zahlungsanbieter</li>
+      <li><strong>Rechnung als PDF</strong> im Admin verfügbar</li>
+    </ul>
   </div>
 </div>
 {% endblock %}

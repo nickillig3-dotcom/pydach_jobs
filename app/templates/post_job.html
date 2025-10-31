@@ -1,13 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Job einstellen</h2>
-<form method="post" class="form">
+<form method="post" class="form" autocomplete="off">
   <label>Titel*<input name="title" required></label>
   <label>Unternehmen*<input name="company" required></label>
   <label>Ort<input name="location" placeholder="z. B. Berlin oder Remote"></label>
   <label>Kontakt‑E‑Mail<input name="email" type="email" placeholder="Optional"></label>
   <label>Logo‑URL<input name="logo_url" placeholder="Optional (https://...)"></label>
   <label>Beschreibung*<textarea name="description" rows="8" required placeholder="Aufgaben, Anforderungen, Benefits …"></textarea></label>
+
+  <!-- Anti-Spam: Honeypot + Rechenfrage -->
+  <div class="hp">
+    <label>Ihre Website (lassen Sie dieses Feld leer)<input name="homepage" autocomplete="off"></label>
+  </div>
+  <label>Sicherheitsfrage: Wieviel ist {{ cap_a }} + {{ cap_b }}?*
+    <input name="captcha" required inputmode="numeric" pattern="[0-9]+">
+  </label>
+
   <button class="btn" type="submit">Anzeigen &amp; Kasse</button>
 </form>
+<p class="muted">Preis für Featured‑Listing (dein Bucket {{ ab_group }}): <strong>{{ '%.2f'|format(price_eur) }} €</strong>.</p>
 {% endblock %}

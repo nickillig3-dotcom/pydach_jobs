@@ -6,6 +6,7 @@
   <button class="btn" type="submit">CSV importieren</button>
 </form>
 
+<h3>Bestellungen</h3>
 <table class="table">
   <thead>
     <tr><th>ID</th><th>Job</th><th>Ref</th><th>Betrag</th><th>Status</th><th>Aktion</th></tr>
@@ -14,32 +15,36 @@
   {% for o in orders %}
     <tr>
       <td>{{ o.id }}</td>
-      <td><a href="{{ url_for('job_detail', job_id=o.job_id) }}">{{ o.job.title if o.job else "?" }}</a></td>
+      <td>
+        {% if o.job_id != 0 %}
+          <a href="{{ url_for('job_detail', job_id=o.job_id) }}">{{ (o.job.title if o.job else "?") }}</a>
+        {% else %}
+          <em>Sponsoring</em>
+        {% endif %}
+      </td>
       <td><code>{{ o.reference }}</code></td>
       <td>{{ "%.2f"|format(o.amount) }} {{ o.currency }}</td>
       <td>{{ o.status }}</td>
       <td>
         <form action="{{ url_for('mark_paid', order_id=o.id, token=request.args.get('token')) }}" method="post" style="display:inline">
-          <button class="btn">Als bezahlt markieren</button>
+          <button class="btn">Als bezahlt</button>
         </form>
         <form action="{{ url_for('mark_unpaid', order_id=o.id, token=request.args.get('token')) }}" method="post" style="display:inline">
           <button class="btn secondary">Als unbezahlt</button>
         </form>
+        <a class="btn secondary" href="{{ url_for('order_invoice_pdf', order_id=o.id, token=request.args.get('token')) }}">Rechnung</a>
       </td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
-{% endblock %}
+
 <h3>Sponsoren</h3>
 <table class="table">
   <thead>
     <tr><th>ID</th><th>Firma</th><th>Website</th><th>Zeitraum</th><th>Status</th><th>Aktion</th></tr>
   </thead>
   <tbody>
-    {% with _=None %}
-    {% set token = request.args.get('token') %}
-    {% endwith %}
     {% for sp in sponsors %}
       <tr>
         <td>{{ sp.id }}</td>
@@ -56,3 +61,4 @@
     {% endfor %}
   </tbody>
 </table>
+{% endblock %}

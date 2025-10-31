@@ -29,7 +29,6 @@ def seed():
             cur.execute("""INSERT INTO jobs (title, company, location, email, logo_url, description, grace_expires_at)
                            VALUES (?,?,?,?,?,?,?)""",
                         (j["title"], j["company"], j["location"], j["email"], j["logo_url"], j["description"],
-                         # Leerzeichen als SEP für SQLite-Kompatibilität
                          (datetime.utcnow() + timedelta(hours=72)).isoformat(sep=" ", timespec="seconds")))
     print("Demo-Jobs eingefügt.")
 

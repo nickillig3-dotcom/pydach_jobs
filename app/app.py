@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, send_file, abort, flash, Response
+from flask import Flask, render_template, request, redirect, url_for, send_file, abort, flash, Response, session, g
 from datetime import datetime, timedelta, date
 from io import BytesIO
 import os
@@ -7,14 +7,17 @@ import string
 import re
 import unicodedata
 
-from .config import SITE_NAME, OWNER_NAME, IBAN, BIC, PRICE_EUR, FEATURE_DAYS, FEATURE_GRACE_HOURS, ADMIN_TOKEN
+from .config import SITE_NAME, OWNER_NAME, IBAN, BIC, PRICE_EUR_A, PRICE_EUR_B, FEATURE_DAYS, FEATURE_GRACE_HOURS, ADMIN_TOKEN
 from .db import db, init_db
 from .payment import make_epc_qr_png
+
+# PDF
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
 
-# Flask 3.1+: direkt initialisieren
 init_db()
 
 def now():
@@ -23,6 +26,28 @@ def now():
 def order_reference(order_id: int) -> str:
     rand = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     return f"PYDACH-{order_id:05d}-{rand}"
+
+# --- A/B Preis Steuerung ---
+def current_ab_group():
+    ab = request.cookies.get("ab")
+    if ab in ("A","B"):
+        return ab, False
+    # neu zuweisen
+    ab = random.choice(("A","B"))
+    g._set_ab_cookie = ab
+    return ab, True
+
+def current_price_eur():
+    ab, _ = current_ab_group()
+    return PRICE_EUR_A if ab == "A" else PRICE_EUR_B
+
+@app.after_request
+def persist_ab_cookie(resp):
+    if hasattr(g, "_set_ab_cookie") and g._set_ab_cookie in ("A","B"):
+        resp.set_cookie("ab", g._set_ab_cookie, max_age=60*60*24*90, samesite="Lax")
+    return resp
+
+# --- Sponsoring Helper ---
 def active_sponsor():
     with db() as conn:
         cur = conn.cursor()
@@ -37,21 +62,20 @@ def active_sponsor():
 
 @app.context_processor
 def inject_globals():
-    return dict(SITE_NAME=SITE_NAME, price_eur=PRICE_EUR, current_sponsor=active_sponsor())
+    ab, _ = current_ab_group()
+    return dict(SITE_NAME=SITE_NAME, price_eur=current_price_eur(), ab_group=ab, current_sponsor=active_sponsor())
 
-# --- Housekeeping: Grace- und Featured-Flags automatisch pflegen ---
+# --- Housekeeping ---
 @app.before_request
 def housekeeping():
     with db() as conn:
         cur = conn.cursor()
-        # Grace abgelaufen?
         cur.execute("""
             UPDATE jobs
             SET grace_expires_at = NULL
             WHERE grace_expires_at IS NOT NULL
               AND datetime(grace_expires_at) <= datetime('now')
         """)
-        # Featured nur mit Zahlung in letzten FEATURE_DAYS
         cur.execute(f"""
             UPDATE jobs
             SET is_featured = 0
@@ -64,7 +88,7 @@ def housekeeping():
               )
         """)
 
-# --- Helpers für Marketing ---
+# --- Marketing Helpers ---
 def slugify(s: str) -> str:
     s = s or ""
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
@@ -78,7 +102,7 @@ SKILLS = {
     "pandas": ["pandas"],
     "numpy": ["numpy"],
     "sklearn": ["scikit-learn", "sklearn"],
-    "pytorch": ["pytorch", "torch "],
+    "pytorch": ["pytorch", " torch"],
     "tensorflow": ["tensorflow"],
     "spark": ["spark", "pyspark"],
     "airflow": ["airflow"],
@@ -93,15 +117,9 @@ SKILLS = {
     "mlops": ["mlops"],
     "nlp": ["nlp", "natural language processing"]
 }
-SKILL_LABEL = {
-    "django": "Django", "flask": "Flask", "fastapi": "FastAPI",
-    "pandas": "Pandas", "numpy": "NumPy", "sklearn": "scikit-learn",
-    "pytorch": "PyTorch", "tensorflow": "TensorFlow",
-    "spark": "Apache Spark", "airflow": "Apache Airflow", "kafka": "Apache Kafka",
-    "kubernetes": "Kubernetes", "docker": "Docker",
-    "aws": "AWS", "azure": "Azure", "gcp": "Google Cloud (GCP)",
-    "sql": "SQL", "etl": "ETL", "mlops": "MLOps", "nlp": "NLP"
-}
+SKILL_LABEL = { "django":"Django","flask":"Flask","fastapi":"FastAPI","pandas":"Pandas","numpy":"NumPy","sklearn":"scikit-learn",
+                "pytorch":"PyTorch","tensorflow":"TensorFlow","spark":"Apache Spark","airflow":"Apache Airflow","kafka":"Apache Kafka",
+                "kubernetes":"Kubernetes","docker":"Docker","aws":"AWS","azure":"Azure","gcp":"Google Cloud (GCP)","sql":"SQL","etl":"ETL","mlops":"MLOps","nlp":"NLP"}
 
 def collect_jobs():
     with db() as conn:
@@ -151,18 +169,16 @@ def index():
     jobs = [j for j in jobs if match(j)]
     jobs.sort(key=lambda j: (not featured_or_grace(j), j["created_at"]), reverse=False)
 
-    # Top-Themen für Startseite
-    # Städte
+    # Cities
     city_counts = {}
     for j in jobs:
         for ls in location_variants(j.get("location","")):
             if ls:
                 city_counts[ls] = city_counts.get(ls, 0) + 1
-    # Namen wieder hübsch machen (erste Variante pro Slug)
     city_name = {}
     for j in jobs:
-        loc = j.get("location") or ""
-        for part in re.split(r"[,\-/|–—]+", loc):
+        loc_label = j.get("location") or ""
+        for part in re.split(r"[,\-/|–—]+", loc_label):
             s = slugify(part)
             if s and s not in city_name:
                 city_name[s] = part.strip().title()
@@ -181,11 +197,32 @@ def index():
                            top_cities=top_cities,
                            top_skills=top_skills,
                            meta_title=f"{SITE_NAME} — Python‑Jobs im DACH‑Raum",
-                           meta_desc="Spezialisiertes Jobboard für Python in DE/AT/CH. Schnelles Posting, Zahlung per SEPA‑Überweisung (EPC‑QR).")
+                           meta_desc="Spezialisiertes Jobboard für Python in DE/AT/CH. Schnelles Posting, SEPA‑Überweisung (EPC‑QR).")
+
+# --- Anti-Spam helpers ---
+def is_bot_post(form_key_prefix: str) -> bool:
+    # Honeypot
+    if request.form.get("homepage"):
+        return True
+    # Captcha
+    ans = request.form.get("captcha","").strip()
+    key = f"captcha_{form_key_prefix}"
+    try:
+        target = int(session.get(key, "-999"))
+        given = int(ans)
+    except Exception:
+        return True
+    return given != target
 
 @app.route("/jobs/new", methods=["GET", "POST"])
 def post_job():
     if request.method == "POST":
+        if is_bot_post("job"):
+            flash("Sicherheitsprüfung fehlgeschlagen. Bitte erneut versuchen.", "error")
+            # neue Aufgabe erzeugen und Formular erneut rendern
+            a,b = random.randint(1,9), random.randint(1,9)
+            session["captcha_job"] = a + b
+            return render_template("post_job.html", cap_a=a, cap_b=b)
         title = request.form.get("title","").strip()
         company = request.form.get("company","").strip()
         location = request.form.get("location","").strip()
@@ -194,8 +231,9 @@ def post_job():
         description = request.form.get("description","").strip()
         if not title or not company or not description:
             flash("Titel, Unternehmen und Beschreibung sind Pflichtfelder.", "error")
-            return render_template("post_job.html")
-        # Grace
+            a,b = random.randint(1,9), random.randint(1,9)
+            session["captcha_job"] = a + b
+            return render_template("post_job.html", cap_a=a, cap_b=b)
         grace_until = (now() + timedelta(hours=FEATURE_GRACE_HOURS)).isoformat(sep=" ", timespec="seconds")
         with db() as conn:
             cur = conn.cursor()
@@ -203,14 +241,17 @@ def post_job():
                            VALUES (?,?,?,?,?,?,?)""",
                         (title, company, location, email, logo_url, description, grace_until))
             job_id = cur.lastrowid
-            price_cents = int(round(PRICE_EUR * 100))
+            price_cents = int(round(current_price_eur() * 100))
             cur.execute("""INSERT INTO orders (job_id, price_cents, currency, reference)
                            VALUES (?,?,?,?)""", (job_id, price_cents, "EUR", "TEMP"))
             order_id = cur.lastrowid
             ref = order_reference(order_id)
             cur.execute("UPDATE orders SET reference=? WHERE id=?", (ref, order_id))
         return redirect(url_for("checkout", order_id=order_id))
-    return render_template("post_job.html", meta_title=f"Job einstellen — {SITE_NAME}")
+    # GET → captcha erzeugen
+    a,b = random.randint(1,9), random.randint(1,9)
+    session["captcha_job"] = a + b
+    return render_template("post_job.html", cap_a=a, cap_b=b, meta_title=f"Job einstellen — {SITE_NAME}")
 
 @app.get("/job/<int:job_id>")
 def job_detail(job_id: int):
@@ -265,11 +306,12 @@ def admin():
         cur = conn.cursor()
         cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 200")
         orders = cur.fetchall()
-        order_map = {o["id"]: o for o in orders}
         if orders:
-            ids = tuple(o["job_id"] for o in orders)
-            cur.execute(f"SELECT * FROM jobs WHERE id IN ({','.join(['?']*len(ids))})", ids)
-            jobs = {j["id"]: j for j in cur.fetchall()}
+            ids = tuple(set(o["job_id"] for o in orders if o["job_id"] != 0))
+            jobs = {}
+            if ids:
+                cur.execute(f"SELECT * FROM jobs WHERE id IN ({','.join(['?']*len(ids))})", ids)
+                jobs = {j["id"]: j for j in cur.fetchall()}
         else:
             jobs = {}
     for o in orders:
@@ -294,7 +336,11 @@ def mark_paid(order_id: int):
         cur.execute("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP WHERE id=?", (order_id,))
         cur.execute("SELECT job_id FROM orders WHERE id=?", (order_id,))
         job_id = cur.fetchone()["job_id"]
-        cur.execute("UPDATE jobs SET is_featured=1 WHERE id=?", (job_id,))
+        if job_id != 0:
+            cur.execute("UPDATE jobs SET is_featured=1 WHERE id=?", (job_id,))
+        else:
+            # sponsoring wird in eigener route aktiv gesetzt
+            pass
     return redirect(url_for("admin", token=token))
 
 @app.post("/admin/order/<int:order_id>/mark_unpaid")
@@ -307,7 +353,8 @@ def mark_unpaid(order_id: int):
         cur.execute("UPDATE orders SET status='pending', paid_at=NULL WHERE id=?", (order_id,))
         cur.execute("SELECT job_id FROM orders WHERE id=?", (order_id,))
         job_id = cur.fetchone()["job_id"]
-        cur.execute("UPDATE jobs SET is_featured=0 WHERE id=?", (job_id,))
+        if job_id != 0:
+            cur.execute("UPDATE jobs SET is_featured=0 WHERE id=?", (job_id,))
     return redirect(url_for("admin", token=token))
 
 @app.post("/admin/import")
@@ -323,12 +370,9 @@ def import_csv():
     lines = [ln for ln in text.splitlines() if ln.strip()]
     headers = [h.strip().lower() for h in lines[0].split(",")]
     purpose_idx = None
-    amount_idx = None
     for i,h in enumerate(headers):
         if "verwendungszweck" in h or "purpose" in h or "reference" in h or "ref" in h:
             purpose_idx = i
-        if "amount" in h or "betrag" in h:
-            amount_idx = i
     if purpose_idx is None:
         flash("Konnte Spalte mit Verwendungszweck/Reference nicht erkennen.", "error")
         return redirect(url_for("admin", token=token))
@@ -354,28 +398,38 @@ def import_csv():
                 continue
             if o["status"] != "paid":
                 cur.execute("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP WHERE id=?", (o["id"],))
-                cur.execute("UPDATE jobs SET is_featured=1 WHERE id=?", (o["job_id"],))
+                if o["job_id"] != 0:
+                    cur.execute("UPDATE jobs SET is_featured=1 WHERE id=?", (o["job_id"],))
+                else:
+                    cur.execute("UPDATE sponsors SET status='paid' WHERE order_id=?", (o["id"],))
                 updated += 1
             imported += 1
     flash(f"Import fertig. Einträge geprüft: {imported}, neu bezahlt: {updated}.", "success")
     return redirect(url_for("admin", token=token))
+
+# --- Sponsoring ---
 from urllib.parse import urlparse
 
 @app.route("/sponsor/new", methods=["GET", "POST"])
 def sponsor_new():
     if request.method == "POST":
+        if is_bot_post("sponsor"):
+            flash("Sicherheitsprüfung fehlgeschlagen. Bitte erneut versuchen.", "error")
+            a,b = random.randint(1,9), random.randint(1,9)
+            session["captcha_sponsor"] = a + b
+            return render_template("sponsor_new.html", cap_a=a, cap_b=b)
         company = request.form.get("company","").strip()
         website = request.form.get("website","").strip()
         banner_text = request.form.get("banner_text","").strip()
         if not company or not banner_text:
             flash("Firma und Banner‑Text sind Pflicht.", "error")
-            return render_template("sponsor_new.html", meta_title="Sponsor werden")
-        # kleine Normalisierung
+            a,b = random.randint(1,9), random.randint(1,9)
+            session["captcha_sponsor"] = a + b
+            return render_template("sponsor_new.html", cap_a=a, cap_b=b)
         if website and not urlparse(website).scheme:
             website = "https://" + website
         with db() as conn:
             cur = conn.cursor()
-            # Sponsor anlegen
             cur.execute("""INSERT INTO sponsors (company, website, banner_text, starts_at, ends_at, status)
                            VALUES (?,?,?,?,?,?)""",
                         (company, website, banner_text,
@@ -383,8 +437,7 @@ def sponsor_new():
                          (now() + timedelta(days=7)).isoformat(sep=" ", timespec="seconds"),
                          "pending"))
             sponsor_id = cur.lastrowid
-            # Bestellung analog Featured
-            price_cents = int(round(PRICE_EUR * 100))  # du kannst hier z. B. 199 € verlangen
+            price_cents = int(round(current_price_eur() * 100))  # hier gleicher AB-Preis; kann separat gemacht werden
             cur.execute("""INSERT INTO orders (job_id, price_cents, currency, reference)
                            VALUES (?,?,?,?)""", (0, price_cents, "EUR", "TEMP"))
             order_id = cur.lastrowid
@@ -392,7 +445,9 @@ def sponsor_new():
             cur.execute("UPDATE orders SET reference=? WHERE id=?", (ref, order_id))
             cur.execute("UPDATE sponsors SET order_id=? WHERE id=?", (order_id, sponsor_id))
         return redirect(url_for("sponsor_checkout", sponsor_id=sponsor_id))
-    return render_template("sponsor_new.html", meta_title=f"Sponsor werden — {SITE_NAME}")
+    a,b = random.randint(1,9), random.randint(1,9)
+    session["captcha_sponsor"] = a + b
+    return render_template("sponsor_new.html", cap_a=a, cap_b=b, meta_title=f"Sponsor werden — {SITE_NAME}")
 
 @app.get("/sponsor/checkout/<int:sponsor_id>")
 def sponsor_checkout(sponsor_id: int):
@@ -409,7 +464,6 @@ def sponsor_checkout(sponsor_id: int):
                            sp=sp, order=order, amount=amount, iban=IBAN, bic=BIC, owner_name=OWNER_NAME,
                            meta_title=f"Sponsoring — {SITE_NAME}")
 
-# Admin-Buttons für Sponsoring
 @app.post("/admin/sponsor/<int:sponsor_id>/mark_paid")
 def sponsor_mark_paid(sponsor_id: int):
     token = request.args.get("token","")
@@ -425,7 +479,7 @@ def sponsor_mark_paid(sponsor_id: int):
         cur.execute("UPDATE sponsors SET status='paid' WHERE id=?", (sponsor_id,))
     return redirect(url_for("admin", token=token))
 
-# --- Auto-Marketing: robots, sitemap, feed, Landingpages, Weekly ---
+# --- robots/sitemap/feed/landing/weekly (wie zuvor) ---
 @app.get("/robots.txt")
 def robots_txt():
     return Response(
@@ -439,10 +493,8 @@ def sitemap_xml():
     urls = []
     urls.append(f"<url><loc>{url_for('index', _external=True)}</loc><changefreq>daily</changefreq></url>")
     urls.append(f"<url><loc>{url_for('post_job', _external=True)}</loc><changefreq>monthly</changefreq></url>")
-    # Job-Detailseiten
     for j in jobs[:500]:
         urls.append(f"<url><loc>{url_for('job_detail', job_id=j['id'], _external=True)}</loc><changefreq>weekly</changefreq></url>")
-    # Städte
     city_set = {}
     for j in jobs:
         for ls in location_variants(j.get("location","")):
@@ -450,17 +502,14 @@ def sitemap_xml():
                 city_set[ls] = city_set.get(ls, 0) + 1
     for slug, _cnt in list(sorted(city_set.items(), key=lambda x: x[1], reverse=True))[:50]:
         urls.append(f"<url><loc>{url_for('city_page', city_slug=slug, _external=True)}</loc><changefreq>weekly</changefreq></url>")
-    # Skills
     skill_counts = {}
     for j in jobs:
-        txt = f"{j['title']} {j.get('description','')}"     # <-- richtig
+        txt = f"{j['title']} {j.get('description','')}"
         for s in job_skills(txt):
             skill_counts[s] = skill_counts.get(s, 0) + 1
     for slug, _cnt in list(sorted(skill_counts.items(), key=lambda x: x[1], reverse=True))[:50]:
         urls.append(f"<url><loc>{url_for('skill_page', skill_slug=slug, _external=True)}</loc><changefreq>weekly</changefreq></url>")
-    # Weekly (aktuelle und letzte 7 Wochen)
     today = date.today()
-    iso_year, iso_week, _ = today.isocalendar()
     for k in range(0, 8):
         d = today - timedelta(weeks=k)
         y, w, _ = d.isocalendar()
@@ -501,7 +550,6 @@ def city_page(city_slug: str):
         if city_slug in variants:
             sel.append(j)
             if not display_name:
-                # Nimm die Original-Schreibweise
                 for part in re.split(r"[,\-/|–—]+", j.get("location","")):
                     if slugify(part) == city_slug:
                         display_name = part.strip().title()
@@ -538,9 +586,6 @@ def weekly_current():
 
 @app.get("/weekly/<int:year>-<int:week>")
 def weekly_by_id(year: int, week: int):
-    # ISO Woche → Montag berechnen
-    # Finde Montag der Woche
-    # Algorithmus: erster Donnerstag der Woche
     d = date.fromisocalendar(year, week, 1)  # Montag
     start = datetime(d.year, d.month, d.day, 0, 0, 0)
     end = start + timedelta(days=7)
@@ -556,6 +601,107 @@ def weekly_by_id(year: int, week: int):
                            end=(end - timedelta(seconds=1)).strftime("%Y-%m-%d"),
                            meta_title=f"Top Python‑Jobs – Woche {week}/{year} | {SITE_NAME}",
                            meta_desc=f"Neue Python‑Jobs im DACH‑Raum in Woche {week}/{year}.")
+
+# --- Rechnung PDF ---
+def invoice_pdf_buffer(order, job=None, sponsor=None):
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    # Header
+    c.setFont("Helvetica-Bold", 16)
+    title = "Rechnung" if order["status"] == "paid" else "Proforma-Rechnung"
+    c.drawString(40, height-60, f"{title} — {SITE_NAME}")
+    c.setFont("Helvetica", 10)
+    c.drawString(40, height-78, f"Rechnungsnr.: INV-{datetime.utcnow().strftime('%Y')}-{order['id']:05d}")
+    c.drawString(40, height-92, f"Datum: {datetime.utcnow().strftime('%Y-%m-%d')}")
+    c.drawString(40, height-106, f"Referenz: {order['reference']}")
+
+    # Anbieter (wir)
+    y = height - 140
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(40, y, "Leistungserbringer")
+    c.setFont("Helvetica", 10)
+    c.drawString(40, y-16, OWNER_NAME)
+    c.drawString(40, y-30, f"IBAN: {IBAN}")
+    if BIC:
+        c.drawString(40, y-44, f"BIC: {BIC}")
+
+    # Kunde
+    y -= 80
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(40, y, "Leistungsempfänger")
+    c.setFont("Helvetica", 10)
+    if job:
+        c.drawString(40, y-16, job.get("company",""))
+        if job.get("email"):
+            c.drawString(40, y-30, job["email"])
+    elif sponsor:
+        c.drawString(40, y-16, sponsor.get("company",""))
+        if sponsor.get("website"):
+            c.drawString(40, y-30, sponsor["website"])
+    else:
+        c.drawString(40, y-16, "Unbekannt")
+
+    # Positionen
+    y -= 70
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(40, y, "Positionen")
+    c.setFont("Helvetica", 10)
+
+    item = ""
+    if job:
+        item = "Featured Job Listing (30 Tage)"
+    elif sponsor:
+        item = "Sponsoring Top‑Banner (7 Tage)"
+    else:
+        item = "Leistung"
+
+    amount = order["price_cents"]/100.0
+    c.drawString(40, y-18, f"1x {item}")
+    c.drawRightString(width-40, y-18, f"{amount:,.2f} EUR".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    # Summe
+    y -= 50
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, y, "Gesamt")
+    c.drawRightString(width-40, y, f"{amount:,.2f} EUR".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    # Fuß
+    y -= 40
+    c.setFont("Helvetica", 8)
+    c.drawString(40, y, "Hinweis: Beispiel-Rechnung. USt-Hinweis bitte an dein Unternehmen anpassen (z. B. §19 UStG / Reverse Charge).")
+    if order["status"] != "paid":
+        c.setFillColorRGB(0.8, 0.0, 0.0)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(40, y-16, "Unbezahlt — Zahlung per SEPA-Überweisung, Verwendungszweck siehe Checkout.")
+        c.setFillColorRGB(0,0,0)
+
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+@app.get("/admin/order/<int:order_id>/invoice.pdf")
+def order_invoice_pdf(order_id: int):
+    token = request.args.get("token","")
+    if token != ADMIN_TOKEN:
+        abort(403)
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM orders WHERE id=?", (order_id,))
+        order = cur.fetchone()
+        if not order:
+            abort(404)
+        job = None
+        sponsor = None
+        if order["job_id"] != 0:
+            cur.execute("SELECT * FROM jobs WHERE id=?", (order["job_id"],))
+            job = cur.fetchone()
+        else:
+            cur.execute("SELECT * FROM sponsors WHERE order_id=?", (order_id,))
+            sponsor = cur.fetchone()
+    pdf = invoice_pdf_buffer(order, job=job, sponsor=sponsor)
+    return send_file(BytesIO(pdf), mimetype="application/pdf", download_name=f"invoice_{order_id}.pdf")
 
 if __name__ == "__main__":
     app.run(debug=True)

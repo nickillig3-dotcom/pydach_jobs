@@ -2,10 +2,18 @@
 {% block content %}
 <h2>Sponsor werden (7 Tage Top‑Banner)</h2>
 <p>Du erhältst ein sichtbares Banner auf Start‑ und Landingpages. Zahlung per <strong>SEPA‑Überweisung</strong> (EPC‑QR).</p>
-<form method="post" class="form">
+<form method="post" class="form" autocomplete="off">
   <label>Firma*<input name="company" required></label>
   <label>Website (inkl. https://)<input name="website" placeholder="https://example.com"></label>
   <label>Banner‑Text*<input name="banner_text" required placeholder="Kurze Botschaft, z. B. 'Wir stellen Python‑Devs ein'"></label>
+
+  <div class="hp">
+    <label>Ihre Website (lassen Sie dieses Feld leer)<input name="homepage" autocomplete="off"></label>
+  </div>
+  <label>Sicherheitsfrage: Wieviel ist {{ cap_a }} + {{ cap_b }}?*
+    <input name="captcha" required inputmode="numeric" pattern="[0-9]+">
+  </label>
+
   <button class="btn" type="submit">Weiter zur Kasse</button>
 </form>
 {% endblock %}
