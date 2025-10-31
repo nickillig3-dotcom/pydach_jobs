@@ -59,5 +59,20 @@ def init_db():
             FOREIGN KEY(job_id) REFERENCES jobs(id)
         )
         """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS sponsors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL,
+            website TEXT,
+            banner_text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            starts_at TIMESTAMP,
+            ends_at TIMESTAMP,
+            status TEXT DEFAULT 'pending',
+            order_id INTEGER,
+            FOREIGN KEY(order_id) REFERENCES orders(id)
+        )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_sponsors_active ON sponsors(status, starts_at, ends_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_reference ON orders(reference)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_featured ON jobs(is_featured)")

@@ -31,3 +31,28 @@
   </tbody>
 </table>
 {% endblock %}
+<h3>Sponsoren</h3>
+<table class="table">
+  <thead>
+    <tr><th>ID</th><th>Firma</th><th>Website</th><th>Zeitraum</th><th>Status</th><th>Aktion</th></tr>
+  </thead>
+  <tbody>
+    {% with _=None %}
+    {% set token = request.args.get('token') %}
+    {% endwith %}
+    {% for sp in sponsors %}
+      <tr>
+        <td>{{ sp.id }}</td>
+        <td>{{ sp.company }}</td>
+        <td>{% if sp.website %}<a href="{{ sp.website }}" target="_blank">{{ sp.website }}</a>{% endif %}</td>
+        <td>{{ sp.starts_at }} → {{ sp.ends_at }}</td>
+        <td>{{ sp.status }}</td>
+        <td>
+          <form action="{{ url_for('sponsor_mark_paid', sponsor_id=sp.id, token=request.args.get('token')) }}" method="post">
+            <button class="btn">Als bezahlt markieren</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

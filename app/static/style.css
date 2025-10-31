@@ -31,3 +31,7 @@ ul.jobs{list-style:none;padding:0;margin:0}
 .topic{margin:6px 0}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{display:inline-block;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#1a237e;text-decoration:none;border:1px solid #dfe6ff;font-size:13px}
+.sponsor{background:#fff8e1;border:1px solid #ffe8a3;border-radius:8px;padding:10px;margin:12px 0}
+.sponsor a{color:#7a4d00;text-decoration:none}
+.sponsor.cta{background:#eef7ff;border-color:#cfe6ff}
+.sponsor.cta a{color:#0b3d91}

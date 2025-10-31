@@ -32,6 +32,17 @@
     {% endif %}
   {% endwith %}
   {% block content %}{% endblock %}
+    {% if current_sponsor %}
+    <div class="sponsor">
+      <a href="{{ current_sponsor.website or '#' }}" rel="nofollow sponsored">
+        <strong>Sponsor:</strong> {{ current_sponsor.banner_text|e }} — {{ current_sponsor.company|e }}
+      </a>
+    </div>
+  {% else %}
+    <div class="sponsor cta">
+      <a href="{{ url_for('sponsor_new') }}"><strong>Dein Logo hier?</strong> 7‑Tage Top‑Banner jetzt buchen (SEPA‑Überweisung).</a>
+    </div>
+  {% endif %}
 </main>
 <footer>
   <div class="container">

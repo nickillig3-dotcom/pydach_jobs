@@ -23,10 +23,21 @@ def now():
 def order_reference(order_id: int) -> str:
     rand = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     return f"PYDACH-{order_id:05d}-{rand}"
+def active_sponsor():
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT * FROM sponsors
+            WHERE status='paid'
+              AND (starts_at IS NULL OR datetime(starts_at) <= datetime('now'))
+              AND (ends_at IS NULL OR datetime(ends_at) >= datetime('now'))
+            ORDER BY created_at DESC LIMIT 1
+        """)
+        return cur.fetchone()
 
 @app.context_processor
 def inject_globals():
-    return dict(SITE_NAME=SITE_NAME, price_eur=PRICE_EUR)
+    return dict(SITE_NAME=SITE_NAME, price_eur=PRICE_EUR, current_sponsor=active_sponsor())
 
 # --- Housekeeping: Grace- und Featured-Flags automatisch pflegen ---
 @app.before_request
@@ -264,7 +275,14 @@ def admin():
     for o in orders:
         o["job"] = jobs.get(o["job_id"])
         o["amount"] = o["price_cents"]/100.0
-    return render_template("admin.html", orders=orders, token=token, meta_title=f"Admin — {SITE_NAME}")
+
+    # Sponsoren laden
+    with db() as conn2:
+        cur2 = conn2.cursor()
+        cur2.execute("SELECT * FROM sponsors ORDER BY created_at DESC LIMIT 100")
+        sponsors = cur2.fetchall()
+
+    return render_template("admin.html", orders=orders, token=token, sponsors=sponsors, meta_title=f"Admin — {SITE_NAME}")
 
 @app.post("/admin/order/<int:order_id>/mark_paid")
 def mark_paid(order_id: int):
@@ -340,6 +358,71 @@ def import_csv():
                 updated += 1
             imported += 1
     flash(f"Import fertig. Einträge geprüft: {imported}, neu bezahlt: {updated}.", "success")
+    return redirect(url_for("admin", token=token))
+from urllib.parse import urlparse
+
+@app.route("/sponsor/new", methods=["GET", "POST"])
+def sponsor_new():
+    if request.method == "POST":
+        company = request.form.get("company","").strip()
+        website = request.form.get("website","").strip()
+        banner_text = request.form.get("banner_text","").strip()
+        if not company or not banner_text:
+            flash("Firma und Banner‑Text sind Pflicht.", "error")
+            return render_template("sponsor_new.html", meta_title="Sponsor werden")
+        # kleine Normalisierung
+        if website and not urlparse(website).scheme:
+            website = "https://" + website
+        with db() as conn:
+            cur = conn.cursor()
+            # Sponsor anlegen
+            cur.execute("""INSERT INTO sponsors (company, website, banner_text, starts_at, ends_at, status)
+                           VALUES (?,?,?,?,?,?)""",
+                        (company, website, banner_text,
+                         (now()).isoformat(sep=" ", timespec="seconds"),
+                         (now() + timedelta(days=7)).isoformat(sep=" ", timespec="seconds"),
+                         "pending"))
+            sponsor_id = cur.lastrowid
+            # Bestellung analog Featured
+            price_cents = int(round(PRICE_EUR * 100))  # du kannst hier z. B. 199 € verlangen
+            cur.execute("""INSERT INTO orders (job_id, price_cents, currency, reference)
+                           VALUES (?,?,?,?)""", (0, price_cents, "EUR", "TEMP"))
+            order_id = cur.lastrowid
+            ref = order_reference(order_id)
+            cur.execute("UPDATE orders SET reference=? WHERE id=?", (ref, order_id))
+            cur.execute("UPDATE sponsors SET order_id=? WHERE id=?", (order_id, sponsor_id))
+        return redirect(url_for("sponsor_checkout", sponsor_id=sponsor_id))
+    return render_template("sponsor_new.html", meta_title=f"Sponsor werden — {SITE_NAME}")
+
+@app.get("/sponsor/checkout/<int:sponsor_id>")
+def sponsor_checkout(sponsor_id: int):
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM sponsors WHERE id=?", (sponsor_id,))
+        sp = cur.fetchone()
+        if not sp:
+            abort(404)
+        cur.execute("SELECT * FROM orders WHERE id=?", (sp["order_id"],))
+        order = cur.fetchone()
+    amount = order["price_cents"]/100.0
+    return render_template("sponsor_checkout.html",
+                           sp=sp, order=order, amount=amount, iban=IBAN, bic=BIC, owner_name=OWNER_NAME,
+                           meta_title=f"Sponsoring — {SITE_NAME}")
+
+# Admin-Buttons für Sponsoring
+@app.post("/admin/sponsor/<int:sponsor_id>/mark_paid")
+def sponsor_mark_paid(sponsor_id: int):
+    token = request.args.get("token","")
+    if token != ADMIN_TOKEN:
+        abort(403)
+    with db() as conn:
+        cur = conn.cursor()
+        # Bestellung als bezahlt
+        cur.execute("SELECT order_id FROM sponsors WHERE id=?", (sponsor_id,))
+        order_id = cur.fetchone()["order_id"]
+        cur.execute("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP WHERE id=?", (order_id,))
+        # Sponsor aktivieren
+        cur.execute("UPDATE sponsors SET status='paid' WHERE id=?", (sponsor_id,))
     return redirect(url_for("admin", token=token))
 
 # --- Auto-Marketing: robots, sitemap, feed, Landingpages, Weekly ---

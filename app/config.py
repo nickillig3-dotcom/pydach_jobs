@@ -4,7 +4,7 @@ from pathlib import Path
 
 SITE_NAME = os.getenv("SITE_NAME", "PyDACH Jobs")
 OWNER_NAME = os.getenv("OWNER_NAME", "pydachjobs GMBH / Nick Illig")  # max. 70 Zeichen
-IBAN = os.getenv("IBAN", "DE84 6835 1865 0108 2283 70")
+IBAN = os.getenv("IBAN", "DE84 6835 7777 0108 2283 70")
 BIC = os.getenv("BIC", "")
 
 PRICE_EUR = float(os.getenv("PRICE_EUR", "149.00"))
