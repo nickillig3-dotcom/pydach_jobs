@@ -20,10 +20,10 @@ app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
 
 @app.context_processor
 def inject_active_sponsor():
-    # Aktiven Sponsor für jede Seite bereitstellen
     now = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
     with db() as conn:
         cur = conn.cursor()
+        # 1) Aktiver Zeitraum
         cur.execute("""
             SELECT * FROM sponsors
             WHERE status='active'
@@ -33,7 +33,19 @@ def inject_active_sponsor():
             LIMIT 1
         """, (now, now))
         s = cur.fetchone()
+        if not s:
+            # 2) Fallback: zugehörige Order ist bezahlt -> auch zeigen
+            cur.execute("""
+              SELECT s.* FROM sponsors s
+              JOIN orders o ON o.id = s.order_id
+              WHERE (s.status='paid' OR s.status='pending')
+                AND o.status='paid'
+              ORDER BY s.created_at DESC
+              LIMIT 1
+            """)
+            s = cur.fetchone()
     return dict(active_sponsor=s)
+
 
 init_db()
 
@@ -151,33 +163,47 @@ def valid_city_token(raw: str) -> bool:
     s = raw.strip()
     if len(s) < 3: return False
     t = s.lower()
-    if any(ch.isdigit() for ch in t): return False
-    # nur Buchstaben/Leer/Bindestrich (inkl. Umlaute/ß)
-    if not re.fullmatch(r"[a-zäöüß \-]+", t): return False
+
+    # Nur Buchstaben/Leer/Bindestrich (inkl. Umlaute/ß)
+    if not re.fullmatch(r"[a-zäöüß \-]+", t): 
+        return False
+
     # mindestens ein Vokal
-    if not re.search(r"[aeiouäöü]", t): return False
-    # Offensichtlicher Unsinn/obzönes
-    if t in {"penis","fuck","shit"}: return False
-    # 4+ gleiche Zeichen am Stück -> Raus (z.B. "aaaa")
-    if re.search(r"(.)\1{3,}", t): return False
-    # Stopwörter
-    if t in CITY_STOP: return False
+    if not re.search(r"[aeiouäöü]", t):
+        return False
+
+    # Stopwörter und Offensichtliches
+    if t in CITY_STOP: 
+        return False
+    if t in {"penis","fuck","shit"}:
+        return False
+
+    # Verhältnis unterschiedliche Buchstaben / Gesamtlänge >= 0.5
+    letters = [ch for ch in t if ch.isalpha()]
+    if not letters:
+        return False
+    uniq_ratio = len(set(letters)) / len(letters)
+    if uniq_ratio < 0.5:
+        return False
+
+    # Wiederholungsmuster (2er oder 3er N-Gramme)
+    if re.fullmatch(r"(..)\1{2,}", t) or re.fullmatch(r"(...)\1{1,}", t):
+        return False
+
     return True
 
 def location_variants(loc: str):
     if not loc:
         return []
     parts = re.split(r"[,\-/|–—]+", loc)
-    slugs = []
+    out = []
     for p in parts:
         if valid_city_token(p):
-            slugs.append(slugify(p.strip()))
-    # eindeutige Reihenfolge beibehalten
-    out = []
-    for s in slugs:
-        if s not in out:
-            out.append(s)
+            s = slugify(p.strip())
+            if s and s not in out:
+                out.append(s)
     return out
+
 
 def job_skills(text: str):
     text = (text or "").lower()
@@ -413,20 +439,24 @@ def admin():
                            meta_title=f"Admin — {SITE_NAME}")
 
 @app.post("/admin/order/<int:order_id>/mark_paid")
-def mark_paid(order_id: int):
+def admin_order_mark_paid(order_id: int):
     token = request.args.get("token","")
     if token != ADMIN_TOKEN:
         abort(403)
+    now = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
     with db() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP WHERE id=?", (order_id,))
+        # Order auf paid setzen
+        cur.execute("UPDATE orders SET status='paid', paid_at=? WHERE id=?", (now, order_id))
+        # Wenn es ein Sponsor-Order ist (job_id == 0) -> Sponsor aktivieren
         cur.execute("SELECT job_id FROM orders WHERE id=?", (order_id,))
-        job_id = cur.fetchone()["job_id"]
-        if job_id != 0:
-            cur.execute("UPDATE jobs SET is_featured=1 WHERE id=?", (job_id,))
-        else:
-            # sponsoring wird in eigener route aktiv gesetzt
-            pass
+        o = cur.fetchone()
+        if o and o["job_id"] == 0:
+            cur.execute("SELECT * FROM sponsors WHERE order_id=?", (order_id,))
+            s = cur.fetchone()
+            if s:
+                ends = (datetime.utcnow() + timedelta(days=7)).isoformat(sep=" ", timespec="seconds")
+                cur.execute("UPDATE sponsors SET status='active', starts_at=?, ends_at=? WHERE id=?", (now, ends, s["id"]))
     return redirect(url_for("admin", token=token))
 
 @app.post("/admin/order/<int:order_id>/mark_unpaid")

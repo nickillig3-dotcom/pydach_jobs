@@ -41,10 +41,9 @@ ul.jobs{list-style:none;padding:0;margin:0}
   background:#ecf5ff; border:1px solid #d7e9ff; border-radius:8px;
   padding:10px 14px; text-decoration:none; color:#1d3b5a;
 }
-.sponsor-bar img {
-  max-height:28px; vertical-align:middle; margin-right:10px;
-}
+.sponsor-bar img { max-height:28px; vertical-align:middle; margin-right:10px; }
 .sponsor-bar span { vertical-align:middle; font-weight:500; }
+
 .kpis { display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin:12px 0 10px; }
 .kpi { background:#f7f8fb; border:1px solid #e6e8ee; border-radius:8px; padding:10px 12px; }
 .kpi-label { color:#667; font-size:12px; }
