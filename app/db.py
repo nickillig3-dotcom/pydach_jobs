@@ -2,7 +2,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterable
 
-from .config_local import DB_PATH
+from .config import DB_PATH
 
 def dict_factory(cursor, row):
     d = {}
