@@ -126,12 +126,13 @@ def collect_jobs():
         cur = conn.cursor()
         cur.execute("SELECT * FROM jobs WHERE status='published' ORDER BY created_at DESC")
         return cur.fetchall()
-
+    
 def location_variants(loc: str):
     if not loc:
         return []
     parts = re.split(r"[,\-/|–—]+", loc)
-    return [slugify(p.strip()) for p in parts if p.strip()]
+    slugs = [slugify(p.strip()) for p in parts if p.strip()]
+    return [s for s in slugs if len(s) >= 3 and s not in {"de","ch","at"}]
 
 def job_skills(text: str):
     text = (text or "").lower()
