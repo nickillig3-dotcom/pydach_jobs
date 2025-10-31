@@ -243,8 +243,9 @@ def post_job():
                         (title, company, location, email, logo_url, description, grace_until))
             job_id = cur.lastrowid
             price_cents = int(round(current_price_eur() * 100))
-            cur.execute("""INSERT INTO orders (job_id, price_cents, currency, reference)
-                           VALUES (?,?,?,?)""", (job_id, price_cents, "EUR", "TEMP"))
+            ab = current_ab_group()[0]
+            cur.execute("""INSERT INTO orders (job_id, price_cents, currency, reference, ab_group)
+                           VALUES (?,?,?,?,?)""", (job_id, price_cents, "EUR", "TEMP", ab))
             order_id = cur.lastrowid
             ref = order_reference(order_id)
             cur.execute("UPDATE orders SET reference=? WHERE id=?", (ref, order_id))
@@ -298,6 +299,7 @@ def checkout_qr(order_id: int):
     return send_file(BytesIO(png), mimetype="image/png", download_name=f"sepa_{order_id}.png")
 
 # --- Admin ---
+
 @app.get("/admin")
 def admin():
     token = request.args.get("token","")
@@ -307,25 +309,46 @@ def admin():
         cur = conn.cursor()
         cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 200")
         orders = cur.fetchall()
+        jobs = {}
         if orders:
-            ids = tuple(set(o["job_id"] for o in orders if o["job_id"] != 0))
-            jobs = {}
+            ids = [o["job_id"] for o in orders if o["job_id"] != 0]
             if ids:
-                cur.execute(f"SELECT * FROM jobs WHERE id IN ({','.join(['?']*len(ids))})", ids)
+                cur.execute(f"SELECT * FROM jobs WHERE id IN ({','.join(['?']*len(ids))})", tuple(set(ids)))
                 jobs = {j["id"]: j for j in cur.fetchall()}
-        else:
-            jobs = {}
+        # A/B-Report
+        cur.execute("""
+            SELECT COALESCE(ab_group,'—') AS ab,
+                   COUNT(*) AS orders,
+                   SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) AS paid,
+                   SUM(CASE WHEN status='paid' THEN price_cents ELSE 0 END) AS revenue_cents
+            FROM orders
+            GROUP BY COALESCE(ab_group,'—')
+            ORDER BY ab
+        """)
+        ab_report = []
+        for r in cur.fetchall():
+            orders_cnt = r["orders"] or 0
+            paid_cnt = r["paid"] or 0
+            conv = (paid_cnt / orders_cnt * 100.0) if orders_cnt else 0.0
+            ab_report.append(dict(
+                ab=r["ab"],
+                orders=orders_cnt,
+                paid=paid_cnt,
+                conv=round(conv, 1),
+                revenue_eur=(r["revenue_cents"] or 0)/100.0
+            ))
     for o in orders:
         o["job"] = jobs.get(o["job_id"])
         o["amount"] = o["price_cents"]/100.0
 
-    # Sponsoren laden
     with db() as conn2:
         cur2 = conn2.cursor()
         cur2.execute("SELECT * FROM sponsors ORDER BY created_at DESC LIMIT 100")
         sponsors = cur2.fetchall()
 
-    return render_template("admin.html", orders=orders, token=token, sponsors=sponsors, meta_title=f"Admin — {SITE_NAME}")
+    return render_template("admin.html", orders=orders, sponsors=sponsors,
+                           ab_report=ab_report, token=token,
+                           meta_title=f"Admin — {SITE_NAME}")
 
 @app.post("/admin/order/<int:order_id>/mark_paid")
 def mark_paid(order_id: int):
@@ -439,8 +462,9 @@ def sponsor_new():
                          "pending"))
             sponsor_id = cur.lastrowid
             price_cents = int(round(current_price_eur() * 100))  # hier gleicher AB-Preis; kann separat gemacht werden
-            cur.execute("""INSERT INTO orders (job_id, price_cents, currency, reference)
-                           VALUES (?,?,?,?)""", (0, price_cents, "EUR", "TEMP"))
+            ab = current_ab_group()[0]
+            cur.execute("""INSERT INTO orders (job_id, price_cents, currency, reference, ab_group)
+                           VALUES (?,?,?,?,?)""", (0, price_cents, "EUR", "TEMP", ab))
             order_id = cur.lastrowid
             ref = order_reference(order_id)
             cur.execute("UPDATE orders SET reference=? WHERE id=?", (ref, order_id))
@@ -496,13 +520,16 @@ def sitemap_xml():
     urls.append(f"<url><loc>{url_for('post_job', _external=True)}</loc><changefreq>monthly</changefreq></url>")
     for j in jobs[:500]:
         urls.append(f"<url><loc>{url_for('job_detail', job_id=j['id'], _external=True)}</loc><changefreq>weekly</changefreq></url>")
-    city_set = {}
+
+    # Städte & Skills
+    city_counts = {}
     for j in jobs:
         for ls in location_variants(j.get("location","")):
             if ls:
-                city_set[ls] = city_set.get(ls, 0) + 1
-    for slug, _cnt in list(sorted(city_set.items(), key=lambda x: x[1], reverse=True))[:50]:
+                city_counts[ls] = city_counts.get(ls, 0) + 1
+    for slug, _cnt in list(sorted(city_counts.items(), key=lambda x: x[1], reverse=True))[:50]:
         urls.append(f"<url><loc>{url_for('city_page', city_slug=slug, _external=True)}</loc><changefreq>weekly</changefreq></url>")
+
     skill_counts = {}
     for j in jobs:
         txt = f"{j['title']} {j.get('description','')}"
@@ -510,11 +537,25 @@ def sitemap_xml():
             skill_counts[s] = skill_counts.get(s, 0) + 1
     for slug, _cnt in list(sorted(skill_counts.items(), key=lambda x: x[1], reverse=True))[:50]:
         urls.append(f"<url><loc>{url_for('skill_page', skill_slug=slug, _external=True)}</loc><changefreq>weekly</changefreq></url>")
+
+    # Kombinationen (Top 50 reale Paare)
+    combo_counts = {}
+    for j in jobs:
+        cities = location_variants(j.get("location",""))
+        skills = job_skills(f"{j['title']} {j.get('description','')}")
+        for c in cities:
+            for s in skills:
+                combo_counts[(c,s)] = combo_counts.get((c,s), 0) + 1
+    for (c,s),cnt in list(sorted(combo_counts.items(), key=lambda x: x[1], reverse=True))[:50]:
+        urls.append(f"<url><loc>{url_for('city_skill_page', city_slug=c, skill_slug=s, _external=True)}</loc><changefreq>weekly</changefreq></url>")
+
+    # Weekly
     today = date.today()
     for k in range(0, 8):
         d = today - timedelta(weeks=k)
         y, w, _ = d.isocalendar()
         urls.append(f"<url><loc>{url_for('weekly_by_id', year=y, week=w, _external=True)}</loc><changefreq>weekly</changefreq></url>")
+
     xml = "<?xml version='1.0' encoding='UTF-8'?>\n" \
           "<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>" + "".join(urls) + "</urlset>"
     return Response(xml, mimetype="application/xml")
@@ -556,9 +597,21 @@ def city_page(city_slug: str):
                         display_name = part.strip().title()
                         break
     sel.sort(key=lambda j: (not featured_or_grace(j), j["created_at"]))
+
+    # Top-Skills in dieser Stadt
+    skill_counts = {}
+    for j in sel:
+        txt = f"{j['title']} {j.get('description','')}"
+        for s in job_skills(txt):
+            skill_counts[s] = skill_counts.get(s, 0) + 1
+    top_skills = sorted([(s, SKILL_LABEL.get(s, s.title()), c) for s,c in skill_counts.items()],
+                        key=lambda x: x[2], reverse=True)[:8]
+
     return render_template("landing_city.html",
                            jobs=sel,
                            city=display_name or city_slug.title(),
+                           city_slug=city_slug,
+                           top_skills=top_skills,
                            country=None,
                            meta_title=f"Python‑Jobs in {display_name or city_slug.title()} | {SITE_NAME}",
                            meta_desc=f"Aktuelle Python‑Jobs in {display_name or city_slug.title()} (DACH).")
@@ -573,11 +626,52 @@ def skill_page(skill_slug: str):
             sel.append(j)
     sel.sort(key=lambda j: (not featured_or_grace(j), j["created_at"]))
     label = SKILL_LABEL.get(skill_slug, skill_slug.title())
+
+    # Top-Städte für diesen Skill
+    city_counts = {}
+    city_name = {}
+    for j in sel:
+        loc_label = j.get("location") or ""
+        for part in re.split(r"[,\-/|–—]+", loc_label):
+            s = slugify(part)
+            if s:
+                city_counts[s] = city_counts.get(s, 0) + 1
+                city_name.setdefault(s, part.strip().title())
+    top_cities = sorted([(s, city_name.get(s, s.title()), c) for s,c in city_counts.items()],
+                        key=lambda x: x[2], reverse=True)[:8]
+
     return render_template("landing_skill.html",
                            jobs=sel,
                            skill_label=label,
+                           skill_slug=skill_slug,
+                           top_cities=top_cities,
                            meta_title=f"{label}-Jobs (DACH) | {SITE_NAME}",
                            meta_desc=f"Python‑Jobs mit {label} im DACH‑Raum.")
+@app.get("/c/<city_slug>/s/<skill_slug>")
+def city_skill_page(city_slug: str, skill_slug: str):
+    jobs = collect_jobs()
+    sel = []
+    display_name = None
+    for j in jobs:
+        variants = location_variants(j.get("location",""))
+        if city_slug in variants:
+            txt = f"{j['title']} {j.get('description','')}"
+            if skill_slug in job_skills(txt):
+                sel.append(j)
+                if not display_name:
+                    for part in re.split(r"[,\-/|–—]+", j.get("location","")):
+                        if slugify(part) == city_slug:
+                            display_name = part.strip().title()
+                            break
+    sel.sort(key=lambda j: (not featured_or_grace(j), j["created_at"]))
+    label = SKILL_LABEL.get(skill_slug, skill_slug.title())
+    return render_template("landing_combo.html",
+                           jobs=sel,
+                           city=display_name or city_slug.title(),
+                           skill_label=label,
+                           meta_title=f"{label}‑Jobs in {display_name or city_slug.title()} | {SITE_NAME}",
+                           meta_desc=f"Python‑Jobs in {display_name or city_slug.title()} mit {label}.")
+
 
 @app.get("/weekly")
 def weekly_current():
@@ -703,6 +797,24 @@ def order_invoice_pdf(order_id: int):
             sponsor = cur.fetchone()
     pdf = invoice_pdf_buffer(order, job=job, sponsor=sponsor)
     return send_file(BytesIO(pdf), mimetype="application/pdf", download_name=f"invoice_{order_id}.pdf")
+@app.get("/invoice/<int:order_id>.pdf")
+def invoice_public(order_id: int):
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM orders WHERE id=?", (order_id,))
+        order = cur.fetchone()
+        if not order:
+            abort(404)
+        job = sponsor = None
+        if order["job_id"] != 0:
+            cur.execute("SELECT * FROM jobs WHERE id=?", (order["job_id"],))
+            job = cur.fetchone()
+        else:
+            cur.execute("SELECT * FROM sponsors WHERE order_id=?", (order_id,))
+            sponsor = cur.fetchone()
+    pdf = invoice_pdf_buffer(order, job=job, sponsor=sponsor)
+    return send_file(BytesIO(pdf), mimetype="application/pdf",
+                     download_name=f"invoice_{order_id}.pdf")
 
 if __name__ == "__main__":
     app.run(debug=True)

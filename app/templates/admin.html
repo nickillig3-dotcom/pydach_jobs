@@ -5,6 +5,23 @@
   <label>CSV‑Export deiner Bank (mit Verwendungszweck)<input type="file" name="file" accept=".csv"></label>
   <button class="btn" type="submit">CSV importieren</button>
 </form>
+<h3>A/B‑Report</h3>
+<table class="table">
+  <thead>
+    <tr><th>Bucket</th><th>Orders</th><th>Paid</th><th>Conversion</th><th>Revenue (€)</th></tr>
+  </thead>
+  <tbody>
+    {% for r in ab_report %}
+      <tr>
+        <td>{{ r.ab }}</td>
+        <td>{{ r.orders }}</td>
+        <td>{{ r.paid }}</td>
+        <td>{{ "%.1f"|format(r.conv) }}%</td>
+        <td>{{ "%.2f"|format(r.revenue_eur) }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
 
 <h3>Bestellungen</h3>
 <table class="table">
@@ -62,3 +79,29 @@
   </tbody>
 </table>
 {% endblock %}
+<h3>Outreach‑Vorlagen</h3>
+<p class="muted">Kopieren, personalisieren, manuell versenden.</p>
+<div class="form">
+  <label>Deutsch
+    <textarea rows="8" readonly>Betreff: Python‑Jobanzeige auf {{ SITE_NAME }}
+
+Hallo {{ '{{' }}Name{{ '}}' }},
+
+wir veröffentlichen gezielt Python‑Jobs in DE/AT/CH. Für {{ '€' }}{{ price_eur|int }} bekommst du ein Featured‑Listing (30 Tage, EPC/SEPA, Rechnung als PDF).
+Kurzlink: {{ request.host_url }}jobs/new
+
+Viele Grüße
+{{ SITE_NAME }}</textarea>
+  </label>
+  <label>English
+    <textarea rows="8" readonly>Subject: Feature your Python role on {{ SITE_NAME }}
+
+Hi {{ '{{' }}Name{{ '}}' }},
+
+we list Python jobs across Germany/Austria/Switzerland. Featured listing for €{{ price_eur|int }} (30 days, EPC/SEPA bank transfer, PDF invoice).
+Quick link: {{ request.host_url }}jobs/new
+
+Best,
+{{ SITE_NAME }}</textarea>
+  </label>
+</div>

@@ -3,6 +3,17 @@
 <h2>{{ skill_label }}‑Jobs (DACH)</h2>
 <p class="muted">Anzeigen, die <strong>{{ skill_label }}</strong> erwähnen.</p>
 
+{% if top_cities %}
+<div class="topic">
+  <div class="label">Beliebte Städte</div>
+  <div class="chips">
+    {% for slug, name, count in top_cities %}
+      <a class="chip" href="{{ url_for('city_skill_page', city_slug=slug, skill_slug=skill_slug) }}">{{ name }} ({{ count }})</a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <ul class="jobs">
   {% for j in jobs %}
     <li class="job {% if j.is_featured or j.grace_expires_at %}featured{% endif %}">

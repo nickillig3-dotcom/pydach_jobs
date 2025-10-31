@@ -1,7 +1,8 @@
 import sqlite3
 from contextlib import contextmanager
 from typing import Iterable
-from .config import DB_PATH
+
+from .config_local import DB_PATH
 
 def dict_factory(cursor, row):
     d = {}
@@ -10,6 +11,7 @@ def dict_factory(cursor, row):
     return d
 
 def get_connection():
+    # Keine automatische Timestamp-Konvertierung; wir arbeiten mit Strings
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = dict_factory
     return conn
@@ -25,7 +27,6 @@ def db() -> Iterable[sqlite3.Connection]:
         raise
     finally:
         conn.close()
-
 def init_db():
     with db() as conn:
         cur = conn.cursor()
@@ -51,6 +52,7 @@ def init_db():
             price_cents INTEGER NOT NULL,
             currency TEXT NOT NULL,
             reference TEXT UNIQUE NOT NULL,
+            ab_group TEXT,
             status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             paid_at TIMESTAMP,
@@ -59,6 +61,7 @@ def init_db():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_orders_reference ON orders(reference)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_jobs_featured ON jobs(is_featured)")
+
         # Sponsoring
         cur.execute("""
         CREATE TABLE IF NOT EXISTS sponsors (
@@ -75,3 +78,9 @@ def init_db():
         )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_sponsors_active ON sponsors(status, starts_at, ends_at)")
+
+        # --- Migration: ab_group nachrüsten, falls alte DB ---
+        cur.execute("PRAGMA table_info(orders)")
+        cols = [r["name"] for r in cur.fetchall()]
+        if "ab_group" not in cols:
+            cur.execute("ALTER TABLE orders ADD COLUMN ab_group TEXT")

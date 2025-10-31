@@ -1,19 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Python‑Jobs in {{ city }}</h2>
-<p class="muted">Aktuelle Anzeigen für {{ city }}.</p>
-
-{% if top_skills %}
-<div class="topic">
-  <div class="label">Beliebte Skills in {{ city }}</div>
-  <div class="chips">
-    {% for slug, name, count in top_skills %}
-      <a class="chip" href="{{ url_for('city_skill_page', city_slug=city_slug, skill_slug=slug) }}">{{ name }} ({{ count }})</a>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
+<h2>{{ skill_label }}‑Jobs in {{ city }}</h2>
+<p class="muted">Kombinierte Treffer für Stadt × Skill.</p>
 <ul class="jobs">
   {% for j in jobs %}
     <li class="job {% if j.is_featured or j.grace_expires_at %}featured{% endif %}">
@@ -24,7 +12,7 @@
       </div>
     </li>
   {% else %}
-    <li>Keine Jobs in {{ city }} — <a href="{{ url_for('post_job') }}">jetzt Job einstellen</a>.</li>
+    <li>Keine Treffer — <a href="{{ url_for('post_job') }}">jetzt Job einstellen</a>.</li>
   {% endfor %}
 </ul>
 {% endblock %}

@@ -13,10 +13,12 @@
     <p><strong>Betrag:</strong> {{ "%.2f"|format(amount) }} EUR</p>
     <p><strong>Verwendungszweck:</strong> <code>{{ order.reference }}</code></p>
     <ul>
-      <li><strong>7 Tage</strong> Top‑Banner auf Start‑ & Landingpages</li>
+      <li><strong>7 Tage</strong> Top-Banner auf Start- & Landingpages</li>
       <li>Einfaches <strong>SEPA</strong> — kein Zahlungsanbieter</li>
       <li><strong>Rechnung als PDF</strong> im Admin verfügbar</li>
     </ul>
+
+    <p><a class="btn secondary" href="{{ url_for('invoice_public', order_id=order.id) }}">Proforma-Rechnung (PDF) herunterladen</a></p>
   </div>
 </div>
 {% endblock %}
