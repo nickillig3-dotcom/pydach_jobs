@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ meta_title or SITE_NAME }}</title>
+  <meta name="description" content="{{ meta_desc or 'Aktuelle Python‑Jobs im DACH‑Raum' }}">
+  <meta property="og:title" content="{{ og_title or meta_title or SITE_NAME }}">
+  <meta property="og:description" content="{{ og_desc or meta_desc or 'Aktuelle Python‑Jobs im DACH‑Raum' }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ request.url }}">
+  {% block head_extra %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <div class="container">
+    <h1><a href="/">{{ SITE_NAME }}</a></h1>
+    <nav>
+      <a class="btn" href="{{ url_for('post_job') }}">Job einstellen</a>
+    </nav>
+  </div>
+</header>
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-area">
+        {% for cat,msg in messages %}
+          <div class="flash {{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<footer>
+  <div class="container">
+    <p>&copy; {{ SITE_NAME }} — Powered by Flask &amp; SQLite</p>
+  </div>
+</footer>
+</body>
+</html>

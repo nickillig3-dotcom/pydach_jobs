@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Top Python‑Jobs — Woche {{ week }} / {{ year }}</h2>
+<p class="muted">Zeitraum: {{ start }} bis {{ end }}</p>
+<ul class="jobs">
+  {% for j in jobs %}
+    <li class="job {% if j.is_featured or j.grace_expires_at %}featured{% endif %}">
+      <div class="meta">
+        <div class="title"><a href="{{ url_for('job_detail', job_id=j.id) }}">{{ j.title }}</a></div>
+        <div class="sub">{{ j.company }} — {{ j.location or "DACH/Remote" }}</div>
+      </div>
+    </li>
+  {% else %}
+    <li>Keine neuen Anzeigen in dieser Woche.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

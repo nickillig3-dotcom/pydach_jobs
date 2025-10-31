@@ -1,0 +1,33 @@
+*{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:0;background:#f7f7fb;color:#222}
+header{background:#0d0d16;color:#fff;padding:12px 0}
+header .container{display:flex;align-items:center;justify-content:space-between}
+h1 a{color:#fff;text-decoration:none}
+.container{max-width:980px;margin:0 auto;padding:0 16px}
+.btn{background:#1a73e8;color:#fff;padding:8px 12px;border-radius:6px;text-decoration:none;border:0;cursor:pointer}
+.btn.secondary{background:#777}
+main{padding:20px 0}
+ul.jobs{list-style:none;padding:0;margin:0}
+.job{background:#fff;border:1px solid #e8e8ef;border-radius:8px;padding:14px 12px;margin:10px 0;display:flex;align-items:center;justify-content:space-between}
+.job .title a{font-weight:600;color:#111;text-decoration:none}
+.job .sub{color:#555;margin-top:4px}
+.badge{display:inline-block;background:#ffe08a;color:#7a4d00;border-radius:4px;padding:2px 6px;font-size:12px;margin-left:8px}
+.featured{border-color:#ffd659}
+.form label{display:block;margin:10px 0}
+.form input,.form textarea{width:100%;padding:10px;border:1px solid #d9d9e6;border-radius:6px;background:#fff}
+.form button{margin-top:10px}
+.flash-area{margin:10px 0}
+.flash{padding:10px;border-radius:6px;margin-bottom:8px}
+.flash.error{background:#ffe1e1;color:#8a0000}
+.flash.success{background:#e7ffe7;color:#005500}
+.payment-box{display:flex;gap:20px;background:#fff;border:1px solid #eee;border-radius:8px;padding:12px}
+.payment-box .qr img{width:220px;height:220px;object-fit:contain;border:1px solid #eee;border-radius:6px;background:#fafafa}
+.table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden}
+.table th,.table td{border-bottom:1px solid #eee;padding:8px 10px;text-align:left}
+.filters{display:flex;gap:10px;margin:10px 0}
+.filters input{flex:1;padding:8px;border:1px solid #ddd;border-radius:6px}
+.hint{color:#555;font-size:14px}
+.muted{color:#666}
+.topics{margin:8px 0 14px 0}
+.topic{margin:6px 0}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-block;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#1a237e;text-decoration:none;border:1px solid #dfe6ff;font-size:13px}

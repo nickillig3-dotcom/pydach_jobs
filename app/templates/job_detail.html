@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block head_extra %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "JobPosting",
+  "title": "{{ job.title|e }}",
+  "description": "{{ job.description|e }}",
+  "datePosted": "{{ job.created_at }}",
+  "hiringOrganization": {"@type": "Organization","name": "{{ job.company|e }}"},
+  "jobLocation": {"@type": "Place","address": {"@type": "PostalAddress","addressLocality": "{{ job.location or 'Remote' }}"}},
+  "directApply": true,
+  "employmentType": "FULL_TIME"
+}
+</script>
+{% endblock %}
+{% block content %}
+<article class="job-detail">
+  <h2>{{ job.title }}</h2>
+  <div class="sub">{{ job.company }} — {{ job.location or "Remote/DACH" }}</div>
+  {% if featured %}<div class="badge">FEATURED</div>{% endif %}
+  <div class="desc">
+    <pre>{{ job.description }}</pre>
+  </div>
+</article>
+{% endblock %}

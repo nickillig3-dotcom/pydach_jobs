@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Aktuelle Python‑Jobs (DACH)</h2>
+<form class="filters" method="get">
+  <input type="text" name="q" placeholder="Stichwort (z. B. Django, Data)" value="{{ request.args.get('q','') }}"/>
+  <input type="text" name="loc" placeholder="Ort (z. B. Berlin)" value="{{ request.args.get('loc','') }}"/>
+  <button type="submit">Suchen</button>
+</form>
+
+<div class="topics">
+  {% if top_cities %}
+  <div class="topic">
+    <div class="label">Städte</div>
+    <div class="chips">
+      {% for slug, name, count in top_cities %}
+        <a class="chip" href="{{ url_for('city_page', city_slug=slug) }}">{{ name }} ({{ count }})</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% if top_skills %}
+  <div class="topic">
+    <div class="label">Skills</div>
+    <div class="chips">
+      {% for slug, name, count in top_skills %}
+        <a class="chip" href="{{ url_for('skill_page', skill_slug=slug) }}">{{ name }} ({{ count }})</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<ul class="jobs">
+  {% for j in jobs %}
+    <li class="job {% if j.is_featured or j.grace_expires_at %}featured{% endif %}">
+      <div class="meta">
+        <div class="title"><a href="{{ url_for('job_detail', job_id=j.id) }}">{{ j.title }}</a></div>
+        <div class="sub">{{ j.company }} — {{ j.location or "Remote/DACH" }}</div>
+        {% if j.is_featured %}<span class="badge">FEATURED</span>{% elif j.grace_expires_at %}<span class="badge">NEW</span>{% endif %}
+      </div>
+    </li>
+  {% else %}
+    <li>Keine Jobs gefunden.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

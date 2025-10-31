@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Python‑Jobs in {{ city }}</h2>
+<p class="muted">Aktuelle Anzeigen für {{ city }}{% if country %}, {{ country }}{% endif %}.</p>
+
+<ul class="jobs">
+  {% for j in jobs %}
+    <li class="job {% if j.is_featured or j.grace_expires_at %}featured{% endif %}">
+      <div class="meta">
+        <div class="title"><a href="{{ url_for('job_detail', job_id=j.id) }}">{{ j.title }}</a></div>
+        <div class="sub">{{ j.company }} — {{ j.location or "DACH/Remote" }}</div>
+        {% if j.is_featured %}<span class="badge">FEATURED</span>{% elif j.grace_expires_at %}<span class="badge">NEW</span>{% endif %}
+      </div>
+    </li>
+  {% else %}
+    <li>Keine Jobs in {{ city }} — <a href="{{ url_for('post_job') }}">jetzt Job einstellen</a>.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

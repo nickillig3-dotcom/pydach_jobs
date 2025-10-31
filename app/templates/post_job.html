@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Job einstellen</h2>
+<form method="post" class="form">
+  <label>Titel*<input name="title" required></label>
+  <label>Unternehmen*<input name="company" required></label>
+  <label>Ort<input name="location" placeholder="z. B. Berlin oder Remote"></label>
+  <label>Kontakt‑E‑Mail<input name="email" type="email" placeholder="Optional"></label>
+  <label>Logo‑URL<input name="logo_url" placeholder="Optional (https://...)"></label>
+  <label>Beschreibung*<textarea name="description" rows="8" required placeholder="Aufgaben, Anforderungen, Benefits …"></textarea></label>
+  <button class="btn" type="submit">Anzeigen &amp; Kasse</button>
+</form>
+{% endblock %}
