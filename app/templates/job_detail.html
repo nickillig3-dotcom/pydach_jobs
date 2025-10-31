@@ -8,19 +8,70 @@
   "description": "{{ job.description|e }}",
   "datePosted": "{{ job.created_at }}",
   "hiringOrganization": {"@type": "Organization","name": "{{ job.company|e }}"},
-  "jobLocation": {"@type": "Place","address": {"@type": "PostalAddress","addressLocality": "{{ job.location or 'Remote' }}"}},
+  "jobLocation": {"@type": "Place","address": {"@type": "PostalAddress","addressLocality": "{{ job.location or 'Remote' }}"}} ,
   "directApply": true,
   "employmentType": "FULL_TIME"
 }
 </script>
 {% endblock %}
+
 {% block content %}
 <article class="job-detail">
   <h2>{{ job.title }}</h2>
+
+  {# JSON-LD Schema für JobPosting (ergänzt) #}
+  {% set full_url = url_for('job_detail', job_id=job.id, _external=True) %}
+  <script type="application/ld+json">
+  {{ {
+    "@context": "https://schema.org",
+    "@type": "JobPosting",
+    "title": job.title,
+    "description": job.description,
+    "datePosted": (job.created_at or "")[:10],
+    "directApply": True,
+    "identifier": {"@type":"PropertyValue", "name": SITE_NAME, "value": "job-" ~ job.id},
+    "hiringOrganization": {
+      "@type": "Organization",
+      "name": job.company,
+      "logo": job.logo_url or ""
+    },
+    "jobLocation": {
+      "@type": "Place",
+      "address": { "@type": "PostalAddress", "addressLocality": job.location or "DACH" }
+    },
+    "employmentType": "FULL_TIME",
+    "applicantLocationRequirements": {
+      "@type": "AdministrativeArea",
+      "name": "Germany, Austria, Switzerland"
+    },
+    "url": full_url
+  } | tojson }}
+  </script>
+
   <div class="sub">{{ job.company }} — {{ job.location or "Remote/DACH" }}</div>
   {% if featured %}<div class="badge">FEATURED</div>{% endif %}
   <div class="desc">
     <pre>{{ job.description }}</pre>
   </div>
+
+  {# ✅ NEUER BLOCK: Bewerben + Share-Buttons #}
+  {% set full_url = url_for('job_detail', job_id=job.id, _external=True) %}
+
+  {% if job.email %}
+    <p>
+      <a class="btn" href="mailto:{{ job.email }}?subject={{ (job.title ~ ' bei ' ~ job.company)|urlencode }}">
+        Jetzt bewerben per E-Mail
+      </a>
+    </p>
+  {% endif %}
+
+  <div class="share">
+    <span class="muted">Teilen:</span>
+    <a class="chip" href="https://www.linkedin.com/sharing/share-offsite/?url={{ full_url|urlencode }}" target="_blank" rel="noopener">LinkedIn</a>
+    <a class="chip" href="https://twitter.com/intent/tweet?url={{ full_url|urlencode }}&text={{ (job.title ~ ' — ' ~ job.company)|urlencode }}" target="_blank" rel="noopener">X/Twitter</a>
+    <button class="chip" onclick="navigator.clipboard.writeText('{{ full_url }}'); this.textContent='Kopiert!';">Link kopieren</button>
+  </div>
+  {# ✅ Ende neuer Block #}
+
 </article>
 {% endblock %}

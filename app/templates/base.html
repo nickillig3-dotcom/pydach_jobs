@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ meta_title or SITE_NAME }}</title>
+  <meta property="og:site_name" content="{{ SITE_NAME }}">
+  <meta property="og:title" content="{{ meta_title or SITE_NAME }}">
+  <meta property="og:description" content="{{ meta_desc or 'Aktuelle Python‑Jobs im DACH‑Raum.' }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ request.url }}">
+  <meta property="og:image" content="{{ url_for('static', filename='og.png', _external=True) }}">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ meta_title or SITE_NAME }}">
+  <meta name="twitter:description" content="{{ meta_desc or 'Aktuelle Python‑Jobs im DACH‑Raum.' }}">
+  <meta name="twitter:image" content="{{ url_for('static', filename='og.png', _external=True) }}">
+
   <meta name="description" content="{{ meta_desc or 'Aktuelle Python‑Jobs im DACH‑Raum' }}">
   <meta property="og:title" content="{{ og_title or meta_title or SITE_NAME }}">
   <meta property="og:description" content="{{ og_desc or meta_desc or 'Aktuelle Python‑Jobs im DACH‑Raum' }}">
