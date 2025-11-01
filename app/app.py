@@ -789,6 +789,91 @@ def mark_paid(order_id: int):
 
     return redirect(url_for("admin", token=request.args.get("token")))
 
+@app.post("/admin/import_csv")
+def admin_import_csv():
+    if request.args.get("token") != ADMIN_TOKEN:
+        abort(401)
+
+    f = request.files.get("csv")
+    if not f or not f.filename:
+        flash("Keine CSV ausgewählt.", "error")
+        return redirect(url_for("admin", token=request.args.get("token")))
+
+    raw = f.read()
+    # Robust decodieren
+    text = None
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except Exception:
+            pass
+    if text is None:
+        flash("CSV konnte nicht dekodiert werden.", "error")
+        return redirect(url_for("admin", token=request.args.get("token")))
+
+    # Delimiter erkennen (Fallback ; )
+    try:
+        sniff = csv.Sniffer().sniff(text.splitlines()[0])
+        delim = sniff.delimiter
+    except Exception:
+        delim = ";"
+
+    reader = csv.DictReader(StringIO(text), delimiter=delim)
+    found, updated, skipped = 0, 0, 0
+
+    with db() as conn:
+        cur = conn.cursor()
+        for row in reader:
+            # In allen Spalten nach PYDACH-Referenzen suchen
+            row_text = " ".join(str(v) for v in row.values() if v is not None).upper()
+            codes = re.findall(r"PYDACH-\d{5}(?:-[A-Z0-9]{3,8})?", row_text)
+            if not codes:
+                continue
+            for code in codes:
+                found += 1
+                # Nur die laufende Nummer als harte Basis nehmen (Suffix kann variieren)
+                core = code.split("-")[0]  # z.B. PYDACH-00004
+                cur.execute("SELECT id, status FROM orders WHERE ref LIKE ? LIMIT 1", (f"{core}%",))
+                o = cur.fetchone()
+                if not o:
+                    continue
+                if o["status"] == "paid":
+                    skipped += 1
+                    continue
+
+                # 1) Order auf paid
+                cur.execute("UPDATE orders SET status='paid', paid_at=datetime('now') WHERE id=?", (o["id"],))
+
+                # 2) Sponsoring aktivieren (falls vorhanden)
+                try:
+                    cur.execute("""
+                        UPDATE sponsors
+                           SET status='active',
+                               starts_at = COALESCE(starts_at, datetime('now')),
+                               ends_at   = COALESCE(ends_at, datetime('now','+7 days'))
+                         WHERE order_id=?
+                    """, (o["id"],))
+                except Exception:
+                    pass
+
+                # 3) Job featuren (falls die Order zu einem Job gehört)
+                try:
+                    cur.execute("SELECT job_id FROM orders WHERE id=?", (o["id"],))
+                    r2 = cur.fetchone()
+                    if r2 and r2.get("job_id"):
+                        feat_until = (datetime.utcnow() + timedelta(days=FEATURE_DAYS)).isoformat(sep=" ", timespec="seconds")
+                        cur.execute("UPDATE jobs SET featured_until=? WHERE id=?", (feat_until, r2["job_id"]))
+                except Exception:
+                    pass
+
+                updated += 1
+
+        conn.commit()
+
+    flash(f"CSV-Import: {found} Referenzen erkannt, {updated} bezahlt, {skipped} bereits bezahlt übersprungen.", "success")
+    return redirect(url_for("admin", token=request.args.get("token")))
+
 # --- Sponsoring ---
 from urllib.parse import urlparse
 

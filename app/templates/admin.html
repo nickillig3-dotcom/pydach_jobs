@@ -153,3 +153,9 @@ Best,
 {{ SITE_NAME }}</textarea>
   </label>
 </div>
+<h3>CSV‑Export deiner Bank (mit Verwendungszweck)</h3>
+<form action="{{ url_for('admin_import_csv', token=request.args.get('token')) }}"
+      method="post" enctype="multipart/form-data" style="margin-bottom:1rem">
+  <input type="file" name="csv" accept=".csv,text/csv" required>
+  <button class="btn btn-primary btn-sm">CSV importieren</button>
+</form>
