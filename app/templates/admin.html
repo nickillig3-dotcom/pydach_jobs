@@ -41,6 +41,35 @@
     {% endfor %}
   </tbody>
 </table>
+<h3>Bewerben‑Klicks</h3>
+<p>
+  Gesamt: <strong>{{ apply_total }}</strong> &nbsp;|&nbsp;
+  letzte 7 Tage: <strong>{{ apply_7d }}</strong> &nbsp;|&nbsp;
+  <a href="{{ url_for('admin_clicks_csv', token=request.args.get('token')) }}">CSV export</a>
+</p>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Job</th>
+      <th>Klicks</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in apply_by_job %}
+    <tr>
+      <td>
+        <a target="_blank" href="{{ url_for('job_detail', job_id=r['id']) }}">
+          {{ r['title'] }}
+        </a>
+      </td>
+      <td>{{ r['n'] }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="2">Noch keine Klicks erfasst.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
 
 <h3>Bestellungen</h3>
 <table class="table">

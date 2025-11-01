@@ -5,7 +5,8 @@ from io import BytesIO
 import os, re, random, string, unicodedata, textwrap
 from PIL import Image, ImageDraw, ImageFont
 from urllib.parse import quote
-
+import csv
+from io import StringIO
 from .config import SITE_NAME, OWNER_NAME, IBAN, BIC, PRICE_EUR_A, PRICE_EUR_B, FEATURE_DAYS, FEATURE_GRACE_HOURS, ADMIN_TOKEN
 from .db import db, init_db
 from .payment import make_epc_qr_png
@@ -506,6 +507,29 @@ def admin():
 
     with db() as conn:
         cur = conn.cursor()
+
+        # --- Bewerben-Klicks (KPIs) ---
+        cur.execute("SELECT COUNT(*) AS n FROM clicks WHERE kind='apply'")
+        apply_total = (cur.fetchone() or {}).get("n", 0)
+
+        cur.execute("""
+            SELECT j.id, j.title, COUNT(c.id) AS n
+            FROM jobs j
+            JOIN clicks c ON c.job_id = j.id AND c.kind='apply'
+            GROUP BY j.id
+            ORDER BY n DESC
+            LIMIT 20
+        """)
+        apply_by_job = cur.fetchall()
+
+        cur.execute("""
+            SELECT COUNT(*) AS n7
+            FROM clicks
+            WHERE kind='apply' AND created_at >= datetime('now', '-7 days')
+        """)
+        apply_7d = (cur.fetchone() or {}).get("n7", 0)
+
+        # --- Bestehende Admin-Auswertung ---
         cur.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 200")
         orders = cur.fetchall()
 
@@ -562,9 +586,18 @@ def admin():
         cur2.execute("SELECT * FROM sponsors ORDER BY created_at DESC LIMIT 100")
         sponsors = cur2.fetchall()
 
-    return render_template("admin.html", orders=orders, sponsors=sponsors,
-                           ab_report=ab_report, kpis=kpis, token=token,
-                           meta_title=f"Admin — {SITE_NAME}")
+    return render_template(
+        "admin.html",
+        orders=orders,
+        sponsors=sponsors,
+        ab_report=ab_report,
+        kpis=kpis,
+        apply_total=apply_total,
+        apply_7d=apply_7d,
+        apply_by_job=apply_by_job,
+        token=token,
+        meta_title=f"Admin — {SITE_NAME}",
+    )
 
 @app.post("/admin/order/<int:order_id>/mark_paid")
 def admin_order_mark_paid(order_id: int):
@@ -687,6 +720,35 @@ def admin_social():
 
     return render_template("admin_social.html", linkedin=linkedin, twitter=tw,
                            token=token, meta_title=f"Social‑Teaser — {SITE_NAME}")
+
+@app.get("/admin/clicks.csv")
+def admin_clicks_csv():
+    if request.args.get("token") != ADMIN_TOKEN:
+        abort(401)
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT created_at, job_id, kind, ip, ref, ua
+            FROM clicks
+            ORDER BY created_at DESC
+            LIMIT 10000
+        """)
+        rows = cur.fetchall()
+    sio = StringIO()
+    w = csv.writer(sio)
+    w.writerow(["created_at", "job_id", "kind", "ip", "ref", "ua"])
+    for r in rows:
+        w.writerow([
+            r["created_at"], r["job_id"], r["kind"],
+            (r["ip"] or "")[:64],
+            (r["ref"] or "")[:256],
+            (r["ua"] or "")[:256],
+        ])
+    return Response(
+        sio.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=clicks.csv"}
+    )
 
 # --- Sponsoring ---
 from urllib.parse import urlparse
