@@ -6,6 +6,9 @@ import random
 import string
 import re
 import unicodedata
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont  # Pillow ist schon da
+import os, textwrap
 
 from .config import SITE_NAME, OWNER_NAME, IBAN, BIC, PRICE_EUR_A, PRICE_EUR_B, FEATURE_DAYS, FEATURE_GRACE_HOURS, ADMIN_TOKEN
 from .db import db, init_db
@@ -15,8 +18,75 @@ from .payment import make_epc_qr_png
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 
+@app.context_processor
+def inject_site_name():
+    # SITE_NAME aus der Config global in allen Templates verfügbar machen
+    return dict(SITE_NAME=SITE_NAME)
+
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
+def _load_font(size: int):
+    # robuste Font-Suche (Windows/Linux/macOS), sonst Default
+    for p in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/System/Library/Fonts/SFNS.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ]:
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
+@app.get("/job/<int:job_id>/og.png")
+def job_og_image(job_id: int):
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE id=?", (job_id,))
+        job = cur.fetchone()
+        if not job:
+            abort(404)
+
+    W, H = 1200, 630
+    img = Image.new("RGB", (W, H), (7, 35, 72))
+    draw = ImageDraw.Draw(img)
+
+    # einfacher Verlauf
+    for i in range(H):
+        c = 35 + int(50 * i / H)
+        draw.line([(0, i), (W, i)], fill=(7, c, 130))
+
+    # Texte
+    title_font = _load_font(64)
+    body_font  = _load_font(32)
+    small_font = _load_font(24)
+
+    margin = 60
+    y = margin
+
+    # Site-Name
+    draw.text((margin, y), SITE_NAME, font=small_font, fill=(200, 220, 255))
+    y += 50
+
+    # Job-Titel (wrap)
+    title = job["title"] or ""
+    lines = textwrap.wrap(title, width=22)
+    for line in lines[:3]:
+        draw.text((margin, y), line, font=title_font, fill=(255, 255, 255))
+        y += 72
+
+    # Company / Ort
+    meta = f'{job["company"] or ""} — {job["location"] or ""}'.strip(" —")
+    draw.text((margin, y+10), meta, font=body_font, fill=(220, 235, 255))
+
+    # Ausgabe
+    bio = BytesIO()
+    img.save(bio, format="PNG")
+    bio.seek(0)
+    return Response(bio.getvalue(), mimetype="image/png")
 
 @app.context_processor
 def inject_active_sponsor():
@@ -264,12 +334,20 @@ def index():
             skill_counts[s] = skill_counts.get(s, 0) + 1
     top_skills = sorted([(s, SKILL_LABEL.get(s, s.title()), c) for s,c in skill_counts.items()], key=lambda x: x[2], reverse=True)[:12]
 
-    return render_template("index.html",
-                           jobs=jobs,
-                           top_cities=top_cities,
-                           top_skills=top_skills,
-                           meta_title=f"{SITE_NAME} — Python‑Jobs im DACH‑Raum",
-                           meta_desc="Spezialisiertes Jobboard für Python in DE/AT/CH. Schnelles Posting, SEPA‑Überweisung (EPC‑QR).")
+    meta_title = f'{job["title"]} — {SITE_NAME}'
+    # Teaser max. 160 Zeichen
+    meta_desc = (job["description"] or "").strip().replace("\n", " ")
+    if len(meta_desc) > 160:
+        meta_desc = meta_desc[:157] + "…"
+    meta_img = url_for("job_og_image", job_id=job_id, _external=True)
+
+    return render_template("job_detail.html",
+                           job=job,
+                           meta_title=meta_title,
+                           meta_desc=meta_desc,
+                           meta_img=meta_img,
+                           meta_title_suffix=f"{job['title']} — {SITE_NAME}")
+
 
 # --- Anti-Spam helpers ---
 def is_bot_post(form_key_prefix: str) -> bool:
@@ -522,6 +600,43 @@ def import_csv():
             imported += 1
     flash(f"Import fertig. Einträge geprüft: {imported}, neu bezahlt: {updated}.", "success")
     return redirect(url_for("admin", token=token))
+
+@app.get("/admin/social")
+def admin_social():
+    token = request.args.get("token","")
+    if token != ADMIN_TOKEN:
+        abort(403)
+
+    since = (datetime.utcnow() - timedelta(days=7)).isoformat(sep=" ", timespec="seconds")
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, title, company, location
+              FROM jobs
+             WHERE created_at >= ?
+             ORDER BY created_at DESC
+             LIMIT 8
+        """, (since,))
+        jobs = cur.fetchall()
+
+    # LinkedIn-Text (mehrere Zeilen)
+    lines = [f"Top Python‑Jobs (letzte 7 Tage) — {SITE_NAME}"]
+    for j in jobs[:6]:
+        url = url_for("job_detail", job_id=j["id"], _external=True)
+        lines.append(f"• {j['title']} — {j['company']} ({j['location']}) {url}")
+    linkedin = "\n".join(lines) + "\n\n#pythonjobs #dach #flask"
+
+    # Twitter/X (280 Zeichen Budget)
+    tw = "Neue Python‑Jobs: "
+    for j in jobs[:4]:
+        url = url_for("job_detail", job_id=j["id"], _external=True)
+        piece = f"{j['title']} ({j['location']}) {url} • "
+        if len(tw) + len(piece) <= 270:
+            tw += piece
+    tw = tw.rstrip(" •") + " #pythonjobs"
+
+    return render_template("admin_social.html", linkedin=linkedin, twitter=tw,
+                           token=token, meta_title=f"Social‑Teaser — {SITE_NAME}")
 
 # --- Sponsoring ---
 from urllib.parse import urlparse

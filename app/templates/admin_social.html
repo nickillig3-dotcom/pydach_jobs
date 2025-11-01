@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Social‑Teaser</h1>
+<p class="muted">Fertige Texte zum Kopieren für LinkedIn / X.</p>
+
+<h3>LinkedIn</h3>
+<textarea id="txtLinkedIn" rows="10" style="width:100%">{{ linkedin }}</textarea>
+<p><button class="btn" onclick="copyText('txtLinkedIn', this)">Kopieren</button></p>
+
+<h3>X / Twitter</h3>
+<textarea id="txtTwitter" rows="4" style="width:100%">{{ twitter }}</textarea>
+<p><button class="btn" onclick="copyText('txtTwitter', this)">Kopieren</button></p>
+
+<script>
+function copyText(id, btn){
+  const el = document.getElementById(id);
+  el.select(); el.setSelectionRange(0, 99999);
+  navigator.clipboard.writeText(el.value).then(()=>{ btn.textContent='Kopiert!'; });
+}
+</script>
+{% endblock %}
