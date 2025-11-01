@@ -329,24 +329,22 @@ def index():
             skill_counts[s] = skill_counts.get(s, 0) + 1
     top_skills = sorted([(s, SKILL_LABEL.get(s, s.title()), c) for s,c in skill_counts.items()], key=lambda x: x[2], reverse=True)[:12]
 
-    meta_title = f"{SITE_NAME} — Aktuelle Python‑Jobs (DACH)"
-    meta_desc  = "Aktuelle Python‑Jobs in Deutschland, Österreich und der Schweiz. Python, Django, FastAPI, Data, ML — stöbern & bewerben."
+    # ✅ Meta-Infos (fixiert)
+    meta_title = f"{SITE_NAME} — Aktuelle Python-Jobs (DACH)"
+    meta_desc  = "Aktuelle Python-Jobs in Deutschland, Österreich und der Schweiz. Python, Django, FastAPI, Data, ML — stöbern & bewerben."
     meta_img   = url_for("static", filename="og.png", _external=True)
-    # Teaser max. 160 Zeichen
-    meta_desc = (job["description"] or "").strip().replace("\n", " ")
-    if len(meta_desc) > 160:
-        meta_desc = meta_desc[:157] + "…"
-    meta_img = url_for("job_og_image", job_id=job_id, _external=True)
 
-    return render_template("job_detail.html",
-                           job=job,
-                           meta_title=meta_title,
-                           meta_desc=meta_desc,
-                           meta_img=meta_img,
-                           meta_title_suffix=f"{job['title']} — {SITE_NAME}",
-                           meta_title=meta_title,
-                           meta_desc=meta_desc,
-                           meta_img=meta_img)
+    # ✅ Render: Meta-Parameter nur einmal übergeben
+    return render_template(
+        "index.html",
+        jobs=jobs,
+        top_cities=top_cities,
+        top_skills=top_skills,
+        meta_title=meta_title,
+        meta_desc=meta_desc,
+        meta_img=meta_img,
+    )
+
 
 
 # --- Anti-Spam helpers ---
