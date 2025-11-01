@@ -622,17 +622,17 @@ def admin_order_mark_paid(order_id: int):
 
 @app.post("/admin/order/<int:order_id>/mark_unpaid")
 def mark_unpaid(order_id: int):
-    token = request.args.get("token","")
-    if token != ADMIN_TOKEN:
-        abort(403)
+    if request.args.get("token") != ADMIN_TOKEN:
+        abort(401)
     with db() as conn:
         cur = conn.cursor()
         cur.execute("UPDATE orders SET status='pending', paid_at=NULL WHERE id=?", (order_id,))
-        cur.execute("SELECT job_id FROM orders WHERE id=?", (order_id,))
-        job_id = cur.fetchone()["job_id"]
-        if job_id != 0:
-            cur.execute("UPDATE jobs SET is_featured=0 WHERE id=?", (job_id,))
-    return redirect(url_for("admin", token=token))
+        try:
+            cur.execute("UPDATE sponsors SET status='pending' WHERE order_id=?", (order_id,))
+        except Exception:
+            pass
+        conn.commit()
+    return redirect(url_for("admin", token=request.args.get("token")))
 
 @app.post("/admin/import")
 def import_csv():
@@ -749,6 +749,45 @@ def admin_clicks_csv():
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=clicks.csv"}
     )
+
+@app.post("/admin/order/<int:order_id>/mark_paid")
+def mark_paid(order_id: int):
+    # Token prüfen
+    if request.args.get("token") != ADMIN_TOKEN:
+        abort(401)
+
+    with db() as conn:
+        cur = conn.cursor()
+
+        # 1) Order auf 'paid'
+        cur.execute("UPDATE orders SET status='paid', paid_at = datetime('now') WHERE id=?", (order_id,))
+
+        # 2) Optional: Sponsoring aktivieren (falls vorhanden)
+        try:
+            cur.execute("""
+                UPDATE sponsors
+                   SET status='active',
+                       starts_at = COALESCE(starts_at, datetime('now')),
+                       ends_at   = COALESCE(ends_at, datetime('now', '+7 days'))
+                 WHERE order_id=?
+            """, (order_id,))
+        except Exception:
+            pass  # kein Sponsor-Record vorhanden -> ok
+
+        # 3) Optional: Job featuren (falls Order zu einem Job gehört)
+        try:
+            cur.execute("SELECT job_id FROM orders WHERE id=?", (order_id,))
+            row = cur.fetchone()
+            if row and row.get("job_id"):
+                from datetime import datetime, timedelta
+                feat_until = (datetime.utcnow() + timedelta(days=FEATURE_DAYS)).isoformat(sep=" ", timespec="seconds")
+                cur.execute("UPDATE jobs SET featured_until=? WHERE id=?", (feat_until, row["job_id"]))
+        except Exception:
+            pass  # falls Spalte nicht existiert o.ä.
+
+        conn.commit()
+
+    return redirect(url_for("admin", token=request.args.get("token")))
 
 # --- Sponsoring ---
 from urllib.parse import urlparse
