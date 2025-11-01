@@ -1,22 +1,19 @@
+# ---- Imports (deine bleiben bestehen; wichtig ist Response & PIL falls genutzt) ----
 from flask import Flask, render_template, request, redirect, url_for, send_file, abort, flash, Response, session, g
 from datetime import datetime, timedelta, date
 from io import BytesIO
-import os
-import random
-import string
-import re
-import unicodedata
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont  # Pillow ist schon da
-import os, textwrap
+import os, re, random, string, unicodedata, textwrap
+from PIL import Image, ImageDraw, ImageFont
 
 from .config import SITE_NAME, OWNER_NAME, IBAN, BIC, PRICE_EUR_A, PRICE_EUR_B, FEATURE_DAYS, FEATURE_GRACE_HOURS, ADMIN_TOKEN
 from .db import db, init_db
 from .payment import make_epc_qr_png
-
 # PDF
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
+
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
 
 @app.context_processor
 def inject_site_name():
@@ -24,8 +21,6 @@ def inject_site_name():
     return dict(SITE_NAME=SITE_NAME)
 
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
 def _load_font(size: int):
     # robuste Font-Suche (Windows/Linux/macOS), sonst Default
     for p in [
@@ -334,7 +329,9 @@ def index():
             skill_counts[s] = skill_counts.get(s, 0) + 1
     top_skills = sorted([(s, SKILL_LABEL.get(s, s.title()), c) for s,c in skill_counts.items()], key=lambda x: x[2], reverse=True)[:12]
 
-    meta_title = f'{job["title"]} — {SITE_NAME}'
+    meta_title = f"{SITE_NAME} — Aktuelle Python‑Jobs (DACH)"
+    meta_desc  = "Aktuelle Python‑Jobs in Deutschland, Österreich und der Schweiz. Python, Django, FastAPI, Data, ML — stöbern & bewerben."
+    meta_img   = url_for("static", filename="og.png", _external=True)
     # Teaser max. 160 Zeichen
     meta_desc = (job["description"] or "").strip().replace("\n", " ")
     if len(meta_desc) > 160:
@@ -346,7 +343,10 @@ def index():
                            meta_title=meta_title,
                            meta_desc=meta_desc,
                            meta_img=meta_img,
-                           meta_title_suffix=f"{job['title']} — {SITE_NAME}")
+                           meta_title_suffix=f"{job['title']} — {SITE_NAME}",
+                           meta_title=meta_title,
+                           meta_desc=meta_desc,
+                           meta_img=meta_img)
 
 
 # --- Anti-Spam helpers ---
