@@ -59,8 +59,9 @@
 
   {% if job.email %}
     <p>
-      <a class="btn" href="mailto:{{ job.email }}?subject={{ (job.title ~ ' bei ' ~ job.company)|urlencode }}">
-        Jetzt bewerben per E-Mail
+      <a class="btn btn-primary"
+         href="{{ url_for('job_apply', job_id=job.id) }}">
+         Jetzt bewerben per E‑Mail
       </a>
     </p>
   {% endif %}

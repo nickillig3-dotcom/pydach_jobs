@@ -4,17 +4,20 @@ from typing import Iterable
 
 from .config import DB_PATH
 
+
 def dict_factory(cursor, row):
     d = {}
     for idx, col in enumerate(cursor.description):
         d[col[0]] = row[idx]
     return d
 
+
 def get_connection():
     # Keine automatische Timestamp-Konvertierung; wir arbeiten mit Strings
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = dict_factory
     return conn
+
 
 @contextmanager
 def db() -> Iterable[sqlite3.Connection]:
@@ -27,6 +30,8 @@ def db() -> Iterable[sqlite3.Connection]:
         raise
     finally:
         conn.close()
+
+
 def init_db():
     with db() as conn:
         cur = conn.cursor()
@@ -84,8 +89,33 @@ def init_db():
         cols = [r["name"] for r in cur.fetchall()]
         if "ab_group" not in cols:
             cur.execute("ALTER TABLE orders ADD COLUMN ab_group TEXT")
+
         # --- Migration: image_url für Sponsoren nachrüsten
         cur.execute("PRAGMA table_info(sponsors)")
         s_cols = [r["name"] for r in cur.fetchall()]
         if "image_url" not in s_cols:
             cur.execute("ALTER TABLE sponsors ADD COLUMN image_url TEXT")
+
+        # ✅ A. Klick-Logging (apply/share etc.)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS clicks (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id    INTEGER NOT NULL,
+            kind      TEXT    NOT NULL,                           -- z.B. 'apply'
+            created_at TEXT   NOT NULL DEFAULT (datetime('now')),
+            ip        TEXT,
+            ua        TEXT,
+            ref       TEXT
+        )
+        """)
+
+
+# ✅ B. Neue Hilfsfunktion zum Logging
+def log_click(job_id: int, kind: str, ip: str = "", ua: str = "", ref: str = ""):
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO clicks (job_id, kind, ip, ua, ref) VALUES (?, ?, ?, ?, ?)",
+            (job_id, kind, ip, ua, ref),
+        )
+        conn.commit()

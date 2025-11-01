@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, date
 from io import BytesIO
 import os, re, random, string, unicodedata, textwrap
 from PIL import Image, ImageDraw, ImageFont
+from urllib.parse import quote
 
 from .config import SITE_NAME, OWNER_NAME, IBAN, BIC, PRICE_EUR_A, PRICE_EUR_B, FEATURE_DAYS, FEATURE_GRACE_HOURS, ADMIN_TOKEN
 from .db import db, init_db
@@ -14,6 +15,9 @@ from reportlab.lib.pagesizes import A4
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
+def _client_ip() -> str:
+    # hinter Proxy/Render/… nimmt er X-Forwarded-For, sonst remote_addr
+    return (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
 
 @app.context_processor
 def inject_site_name():
@@ -82,6 +86,54 @@ def job_og_image(job_id: int):
     img.save(bio, format="PNG")
     bio.seek(0)
     return Response(bio.getvalue(), mimetype="image/png")
+
+@app.get("/job/<int:job_id>/apply")
+def job_apply(job_id: int):
+    # Job laden
+    with db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE id=?", (job_id,))
+        job = cur.fetchone()
+        if not job:
+            abort(404)
+
+    email = (job["contact_email"] or "").strip()
+    if not email:
+        # Kein Kontakt hinterlegt -> zurück zur Detailseite
+        return redirect(url_for("job_detail", job_id=job_id))
+
+    # Klick loggen (best effort)
+    try:
+        from .db import log_click
+        log_click(
+            job_id,
+            "apply",
+            _client_ip(),
+            request.headers.get("User-Agent", ""),
+            request.referrer or "",
+        )
+    except Exception:
+        pass
+
+    # Mailto bauen
+    subject = f"Bewerbung: {job['title']}"
+    body = (
+        f"Hallo {job['company']},\n\n"
+        f"ich habe Ihre Anzeige auf {SITE_NAME} gesehen.\n"
+        f"Referenz: PYDACH-{job_id}\n\n"
+        f"Viele Grüße\n"
+    )
+    mailto = f"mailto:{email}?subject={quote(subject)}&body={quote(body)}"
+
+    # Leichte HTML-Seite, die das E-Mail-Programm öffnet (und Fallback-Link zeigt)
+    html = f"""<!doctype html>
+<meta charset="utf-8">
+<title>Bewerbung öffnen …</title>
+<p>Wir öffnen dein E‑Mail‑Programm …</p>
+<script>setTimeout(function(){{window.location.href={mailto!r};}}, 80);</script>
+<p><a href="{mailto}">Falls nichts passiert, hier klicken.</a></p>
+"""
+    return Response(html, mimetype="text/html")
 
 @app.context_processor
 def inject_active_sponsor():
